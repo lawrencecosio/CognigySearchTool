@@ -2,7 +2,7 @@
 
 This is a local web app to search Cognigy projects, flows, and flow nodes.
 
-## Quick start (non-engineer friendly)
+## Quick start
 
 ### 1. Install Node.js (one time)
 
