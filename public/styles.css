@@ -20,6 +20,16 @@ form {
   margin-bottom: 1rem;
 }
 
+.project-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.project-row select {
+  flex: 1;
+}
+
 input,
 button {
   font-size: 1rem;
@@ -33,6 +43,137 @@ button {
 
 #status.error {
   color: #b42318;
+}
+
+.hidden {
+  display: none;
+}
+
+.results-panel {
+  margin-top: 1rem;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.view-btn {
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+}
+
+.view-btn.active {
+  background: #0969da;
+  color: #fff;
+  border-color: #0969da;
+}
+
+.node-card {
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 0.9rem;
+  margin-bottom: 0.8rem;
+  background: #fff;
+}
+
+.node-title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.node-meta {
+  margin: 0 0 0.5rem;
+  color: #57606a;
+  font-size: 0.9rem;
+}
+
+.details-grid {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.7rem;
+}
+
+.detail-row {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+}
+
+.detail-label {
+  font-size: 0.8rem;
+  color: #57606a;
+  min-width: 88px;
+}
+
+.detail-value {
+  font-size: 0.88rem;
+}
+
+.matches-wrap {
+  margin-bottom: 0.6rem;
+}
+
+.matches-title {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.match-badge {
+  display: inline-block;
+  margin: 0 0.35rem 0.35rem 0;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: #ddf4ff;
+  color: #0550ae;
+  font-size: 0.8rem;
+}
+
+.highlights-wrap {
+  border-top: 1px solid #d8dee4;
+  padding-top: 0.55rem;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.key-chip {
+  display: inline-block;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #24292f;
+  font-size: 0.78rem;
+}
+
+.preview-block {
+  margin-bottom: 0.45rem;
+}
+
+.preview-title {
+  margin: 0 0 0.15rem;
+  font-size: 0.8rem;
+  color: #57606a;
+}
+
+.preview-text {
+  margin: 0;
+  font-size: 0.86rem;
+  white-space: pre-wrap;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 0.45rem;
+}
+
+.empty-results {
+  color: #57606a;
 }
 
 pre {

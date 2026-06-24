@@ -12,12 +12,33 @@
       <form id="search-form">
         <label for="query">Search query</label>
         <input id="query" name="query" type="text" placeholder="Enter search text" required />
+        <label for="projectId">Project</label>
+        <div class="project-row">
+          <select id="projectId" name="projectId">
+            <option value="">All projects</option>
+          </select>
+          <button type="button" id="refresh-projects">Refresh projects</button>
+        </div>
+        <label for="flowId">Flow</label>
+        <div class="project-row">
+          <select id="flowId" name="flowId">
+            <option value="">All flows (project-wide search)</option>
+          </select>
+          <button type="button" id="refresh-flows">Refresh flows</button>
+        </div>
         <label for="limit">Limit</label>
         <input id="limit" name="limit" type="number" min="1" max="100" value="20" />
         <button type="submit">Search</button>
       </form>
       <p id="status" role="status"></p>
-      <pre id="results"></pre>
+      <section id="results-panel" class="results-panel hidden">
+        <div class="view-toggle">
+          <button type="button" id="processed-view-btn" class="view-btn active">Processed view</button>
+          <button type="button" id="json-view-btn" class="view-btn">JSON view</button>
+        </div>
+        <div id="processed-results"></div>
+        <pre id="json-results" class="hidden"></pre>
+      </section>
     </main>
     <script src="/app.js"></script>
   </body>
