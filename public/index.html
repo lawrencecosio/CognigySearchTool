@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cognigy Search Tool</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Cognigy Search Tool</h1>
+      <form id="search-form">
+        <label for="query">Search query</label>
+        <input id="query" name="query" type="text" placeholder="Enter search text" required />
+        <label for="limit">Limit</label>
+        <input id="limit" name="limit" type="number" min="1" max="100" value="20" />
+        <button type="submit">Search</button>
+      </form>
+      <p id="status" role="status"></p>
+      <pre id="results"></pre>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
