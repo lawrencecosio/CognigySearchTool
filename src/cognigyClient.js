@@ -187,41 +187,185 @@ async function listCognigyFlows({ projectId }) {
   };
 }
 
-async function searchFlowNodes({ flowId, query }) {
+function filterFlowNodesByType(items, nodeType) {
+  if (!nodeType) {
+    return items;
+  }
+
+  const normalizedNodeType = nodeType.toLowerCase();
+  return items.filter((item) => {
+    const itemNodeType = item && item.node && typeof item.node === "object" ? String(item.node.type || "") : "";
+    return itemNodeType.toLowerCase() === normalizedNodeType;
+  });
+}
+
+function extractNodeTypesFromPayload(payload) {
+  const candidateArrays = [];
+
+  const directItems = extractItems(payload);
+  if (directItems.length) {
+    candidateArrays.push(directItems);
+  }
+
+  if (payload && typeof payload === "object") {
+    if (Array.isArray(payload.nodes)) {
+      candidateArrays.push(payload.nodes);
+    }
+    if (payload.chart && typeof payload.chart === "object" && Array.isArray(payload.chart.nodes)) {
+      candidateArrays.push(payload.chart.nodes);
+    }
+  }
+
+  const seen = new Set();
+  for (const nodes of candidateArrays) {
+    for (const node of nodes) {
+      if (!node || typeof node !== "object") {
+        continue;
+      }
+      const nodeType = typeof node.type === "string" ? node.type.trim() : "";
+      if (nodeType) {
+        seen.add(nodeType);
+      }
+    }
+  }
+
+  return Array.from(seen).sort((a, b) => a.localeCompare(b));
+}
+
+function extractFlowChartNodes(payload) {
+  const nodes = [];
+  const directItems = extractItems(payload);
+  if (directItems.length) {
+    nodes.push(...directItems);
+  }
+  if (payload && typeof payload === "object" && Array.isArray(payload.nodes)) {
+    nodes.push(...payload.nodes);
+  }
+  if (payload && typeof payload === "object" && payload.chart && typeof payload.chart === "object") {
+    if (Array.isArray(payload.chart.nodes)) {
+      nodes.push(...payload.chart.nodes);
+    }
+  }
+  return nodes.filter((node) => node && typeof node === "object");
+}
+
+async function listFlowNodeTypes({ flowId }) {
   const baseUrl = normalizeBaseUrl(getRequiredEnv("COGNIGY_API_BASE_URL"));
   const apiKey = getRequiredEnv("COGNIGY_API_KEY");
+
+  if (!flowId) {
+    throw new Error("Flow ID is required to list node types.");
+  }
+
+  const candidatePaths = [`/v2.0/flows/${flowId}/chart/nodes`, `/v2.0/flows/${flowId}/chart`];
+  const errors = [];
+  const collectedTypes = new Set();
+
+  for (const candidatePath of candidatePaths) {
+    try {
+      const payload = await fetchCognigyJson(new URL(`${baseUrl}${candidatePath}`), apiKey);
+      const items = extractNodeTypesFromPayload(payload);
+      for (const item of items) {
+        collectedTypes.add(item);
+      }
+      if (!items.length) {
+        errors.push(`${candidatePath}: no node types found`);
+      }
+    } catch (error) {
+      errors.push(`${candidatePath}: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
+
+  if (collectedTypes.size) {
+    const items = Array.from(collectedTypes).sort((a, b) => a.localeCompare(b));
+    return {
+      flowId,
+      count: items.length,
+      items
+    };
+  }
+
+  throw new Error(`Unable to load node types for flow. ${errors.join(" | ")}`);
+}
+
+async function searchFlowNodes({ flowId, query = "", nodeType = "" }) {
+  const baseUrl = normalizeBaseUrl(getRequiredEnv("COGNIGY_API_BASE_URL"));
+  const apiKey = getRequiredEnv("COGNIGY_API_KEY");
+  const normalizedQuery = String(query).trim();
+  const normalizedNodeType = String(nodeType).trim();
+  const hasQuery = Boolean(normalizedQuery);
+  const hasNodeType = Boolean(normalizedNodeType);
 
   if (!flowId) {
     throw new Error("Flow ID is required for node search.");
   }
 
-  const searchUrl = new URL(`${baseUrl}/v2.0/flows/${flowId}/chart/nodes/search`);
-  searchUrl.searchParams.set("filter", query);
-  const matchPayload = await fetchCognigyJson(searchUrl, apiKey);
-  const matches = extractItems(matchPayload);
+  if (hasQuery === hasNodeType) {
+    throw new Error("Provide exactly one of query or nodeType for flow node search.");
+  }
 
-  const detailPromises = matches.map(async (match) => {
-    const nodeId = match && typeof match === "object" ? String(match.nodeId || "") : "";
-    if (!nodeId) {
-      throw new Error("Node search response did not include nodeId.");
-    }
+  let matchPayload = {};
+  let allItems = [];
 
-    const nodeUrl = new URL(`${baseUrl}/v2.0/flows/${flowId}/chart/nodes/${nodeId}`);
-    const node = await fetchCognigyJson(nodeUrl, apiKey);
-    return {
-      nodeId,
-      nodeReferenceId: match.nodeReferenceId || "",
-      matches: Array.isArray(match.matches) ? match.matches : [],
-      node
-    };
-  });
+  if (hasNodeType) {
+    const chartUrl = new URL(`${baseUrl}/v2.0/flows/${flowId}/chart`);
+    const chartPayload = await fetchCognigyJson(chartUrl, apiKey);
+    const chartNodes = extractFlowChartNodes(chartPayload);
+    const matchingChartNodes = chartNodes.filter((node) => {
+      const nodeTypeValue = typeof node.type === "string" ? node.type.trim().toLowerCase() : "";
+      return nodeTypeValue === normalizedNodeType.toLowerCase();
+    });
 
-  const items = await Promise.all(detailPromises);
+    const detailPromises = matchingChartNodes.map(async (node) => {
+      const nodeId = String(node._id || "");
+      if (!nodeId) {
+        throw new Error("Flow chart node is missing _id.");
+      }
+      const nodeUrl = new URL(`${baseUrl}/v2.0/flows/${flowId}/chart/nodes/${nodeId}`);
+      const fullNode = await fetchCognigyJson(nodeUrl, apiKey);
+      return {
+        nodeId,
+        nodeReferenceId: node.referenceId || "",
+        matches: [],
+        node: fullNode
+      };
+    });
+
+    allItems = await Promise.all(detailPromises);
+    matchPayload = { items: matchingChartNodes };
+  } else {
+    const searchUrl = new URL(`${baseUrl}/v2.0/flows/${flowId}/chart/nodes/search`);
+    searchUrl.searchParams.set("filter", normalizedQuery);
+    matchPayload = await fetchCognigyJson(searchUrl, apiKey);
+    const matches = extractItems(matchPayload);
+
+    const detailPromises = matches.map(async (match) => {
+      const nodeId = match && typeof match === "object" ? String(match.nodeId || "") : "";
+      if (!nodeId) {
+        throw new Error("Node search response did not include nodeId.");
+      }
+
+      const nodeUrl = new URL(`${baseUrl}/v2.0/flows/${flowId}/chart/nodes/${nodeId}`);
+      const node = await fetchCognigyJson(nodeUrl, apiKey);
+      return {
+        nodeId,
+        nodeReferenceId: match.nodeReferenceId || "",
+        matches: Array.isArray(match.matches) ? match.matches : [],
+        node
+      };
+    });
+
+    allItems = await Promise.all(detailPromises);
+  }
+
+  const items = hasNodeType ? filterFlowNodesByType(allItems, normalizedNodeType) : allItems;
   return {
     mode: "flow-node-search",
     flowId,
-    query,
+    query: normalizedQuery,
+    nodeType: normalizedNodeType,
     count: items.length,
+    upstreamCount: allItems.length,
     items,
     raw: matchPayload
   };
@@ -231,5 +375,6 @@ module.exports = {
   searchCognigy,
   listCognigyProjects,
   listCognigyFlows,
+  listFlowNodeTypes,
   searchFlowNodes
 };

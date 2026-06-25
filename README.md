@@ -69,6 +69,17 @@ Then open:
 
 `http://localhost:3000`
 
+## Search modes
+
+The app has two tabs:
+
+- **Search by text**
+  - Select a project.
+  - Flow is optional (`All flows` runs project-wide text search).
+- **Search by node type**
+  - Select project first, then flow.
+  - Node type dropdown is populated from the selected flow's available node types.
+
 ## Stop the app
 
 In the terminal where it is running, press:

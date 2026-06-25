@@ -9,27 +9,62 @@
   <body>
     <main class="container">
       <h1>Cognigy Search Tool</h1>
-      <form id="search-form">
-        <label for="query">Search query</label>
-        <input id="query" name="query" type="text" placeholder="Enter search text" required />
-        <label for="projectId">Project</label>
-        <div class="project-row">
-          <select id="projectId" name="projectId">
-            <option value="">All projects</option>
+      <div class="search-tabs" role="tablist" aria-label="Search mode">
+        <button type="button" id="text-tab-btn" class="tab-btn active" role="tab" aria-controls="text-tab-panel" aria-selected="true">
+          Search by text
+        </button>
+        <button type="button" id="node-type-tab-btn" class="tab-btn" role="tab" aria-controls="node-type-tab-panel" aria-selected="false">
+          Search by node type
+        </button>
+      </div>
+
+      <section id="text-tab-panel" class="tab-panel" role="tabpanel" aria-labelledby="text-tab-btn">
+        <form id="text-search-form">
+          <label for="text-query">Search query</label>
+          <input id="text-query" name="query" type="text" placeholder="Enter search text" required />
+          <label for="text-projectId">Project</label>
+          <div class="project-row">
+            <select id="text-projectId" name="projectId">
+              <option value="">Select project</option>
+            </select>
+            <button type="button" id="refresh-projects">Refresh projects</button>
+          </div>
+          <label for="text-flowId">Flow (optional)</label>
+          <div class="project-row">
+            <select id="text-flowId" name="flowId">
+              <option value="">All flows (project-wide search)</option>
+            </select>
+            <button type="button" id="refresh-text-flows">Refresh flows</button>
+          </div>
+          <label for="text-limit">Limit</label>
+          <input id="text-limit" name="limit" type="number" min="1" max="100" value="20" />
+          <button type="submit">Search text</button>
+        </form>
+      </section>
+
+      <section id="node-type-tab-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="node-type-tab-btn">
+        <form id="node-type-search-form">
+          <label for="node-projectId">Project</label>
+          <div class="project-row">
+            <select id="node-projectId" name="projectId">
+              <option value="">Select project</option>
+            </select>
+            <button type="button" id="refresh-node-projects">Refresh projects</button>
+          </div>
+          <label for="node-flowId">Flow</label>
+          <div class="project-row">
+            <select id="node-flowId" name="flowId">
+              <option value="">Select flow</option>
+            </select>
+            <button type="button" id="refresh-node-flows">Refresh flows</button>
+          </div>
+          <label for="nodeType">Node type</label>
+          <select id="nodeType" name="nodeType" disabled>
+            <option value="">Select node type</option>
           </select>
-          <button type="button" id="refresh-projects">Refresh projects</button>
-        </div>
-        <label for="flowId">Flow</label>
-        <div class="project-row">
-          <select id="flowId" name="flowId">
-            <option value="">All flows (project-wide search)</option>
-          </select>
-          <button type="button" id="refresh-flows">Refresh flows</button>
-        </div>
-        <label for="limit">Limit</label>
-        <input id="limit" name="limit" type="number" min="1" max="100" value="20" />
-        <button type="submit">Search</button>
-      </form>
+          <button type="submit">Search node type</button>
+        </form>
+      </section>
       <p id="status" role="status"></p>
       <section id="results-panel" class="results-panel hidden">
         <div class="view-toggle">
