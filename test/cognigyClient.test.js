@@ -249,3 +249,65 @@ test("searchAllFlowNodes with nodeType: returns only matching-type nodes; non-ma
     }
   }
 });
+
+test("searchAllFlowNodes: surfaces per-flow errors in response; partial results still returned", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  global.fetch = async (url) => {
+    const s = String(url);
+    if (s.includes("/v2.0/flows?")) {
+      return makeJsonResponse({
+        items: [
+          { _id: "flow-ok", name: "Good Flow" },
+          { _id: "flow-err", name: "Error Flow" }
+        ]
+      });
+    }
+    if (s.includes("/v2.0/flows/flow-ok/chart/nodes/search")) {
+      return makeJsonResponse({ items: [{ nodeId: "n-1", nodeReferenceId: "r-1", matches: [] }] });
+    }
+    if (s.endsWith("/v2.0/flows/flow-ok/chart/nodes/n-1")) {
+      return makeJsonResponse({ _id: "n-1", type: "say", label: "Hello" });
+    }
+    // flow-err returns HTTP 403
+    if (s.includes("/v2.0/flows/flow-err/chart/nodes/search")) {
+      return {
+        ok: false,
+        status: 403,
+        headers: { get: () => "application/json" },
+        async text() { return JSON.stringify({ error: "Forbidden" }); }
+      };
+    }
+    throw new Error(`Unexpected URL: ${s}`);
+  };
+
+  try {
+    const result = await searchAllFlowNodes({ projectId: "proj-1", query: "hello", limit: 20 });
+
+    assert.equal(result.count, 1);
+    assert.equal(result.items[0].flowName, "Good Flow");
+
+    // Error flow is captured — not silently dropped
+    assert.ok(Array.isArray(result.flowErrors), "flowErrors must be an array");
+    assert.equal(result.flowErrors.length, 1);
+    assert.equal(result.flowErrors[0].flowName, "Error Flow");
+    assert.ok(typeof result.flowErrors[0].error === "string", "error must be a string");
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.COGNIGY_API_BASE_URL;
+    } else {
+      process.env.COGNIGY_API_BASE_URL = originalBaseUrl;
+    }
+    if (originalApiKey === undefined) {
+      delete process.env.COGNIGY_API_KEY;
+    } else {
+      process.env.COGNIGY_API_KEY = originalApiKey;
+    }
+  }
+});

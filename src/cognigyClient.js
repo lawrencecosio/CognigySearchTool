@@ -386,19 +386,35 @@ async function searchAllFlowNodes({ projectId, query, limit, nodeType }) {
 
   const flowsResult = await listCognigyFlows({ projectId });
 
-  const searchPromises = flowsResult.items.map(async (flow) => {
-    try {
+  const settled = await Promise.allSettled(
+    flowsResult.items.map(async (flow) => {
       const result = hasNodeType
         ? await searchFlowNodes({ flowId: flow.id, nodeType: normalizedNodeType })
         : await searchFlowNodes({ flowId: flow.id, query: normalizedQuery });
-      return result.items.map((item) => ({ ...item, flowId: flow.id, flowName: flow.name }));
-    } catch (_error) {
-      return [];
-    }
-  });
+      return { flow, items: result.items };
+    })
+  );
 
-  const resultArrays = await Promise.all(searchPromises);
-  const allItems = resultArrays.flat().slice(0, limit);
+  const allItems = [];
+  const flowErrors = [];
+
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    const flow = flowsResult.items[i];
+    if (outcome.status === "fulfilled") {
+      for (const item of outcome.value.items) {
+        allItems.push({ ...item, flowId: flow.id, flowName: flow.name });
+      }
+    } else {
+      flowErrors.push({
+        flowId: flow.id,
+        flowName: flow.name,
+        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)
+      });
+    }
+  }
+
+  const limited = allItems.slice(0, limit);
 
   return {
     mode: "all-flows-node-search",
@@ -406,8 +422,9 @@ async function searchAllFlowNodes({ projectId, query, limit, nodeType }) {
     query: normalizedQuery,
     nodeType: normalizedNodeType,
     flowCount: flowsResult.count,
-    count: allItems.length,
-    items: allItems
+    count: limited.length,
+    flowErrors: flowErrors.length > 0 ? flowErrors : [],
+    items: limited
   };
 }
 
