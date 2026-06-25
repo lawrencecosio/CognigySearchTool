@@ -89,6 +89,14 @@ function renderExcerpt(container, fieldType, excerptHtml) {
 function renderProcessedNodes(items, query) {
   processedResultsEl.innerHTML = "";
 
+  // Setup hint when deep links aren't configured
+  if (!uiBaseUrl) {
+    const hintEl = document.createElement("p");
+    hintEl.className = "deep-link-hint";
+    hintEl.textContent = "\uD83D\uDCA1 Add COGNIGY_UI_BASE_URL to your .env to enable \u2018Open in Cognigy\u2019 links on each result.";
+    processedResultsEl.appendChild(hintEl);
+  }
+
   if (!Array.isArray(items) || !items.length) {
     const emptyEl = document.createElement("p");
     emptyEl.className = "empty-results";
@@ -102,10 +110,21 @@ function renderProcessedNodes(items, query) {
     const cardEl = document.createElement("article");
     cardEl.className = "node-card";
 
-    // Title
-    const titleEl = document.createElement("h3");
+    // Deep link — use nodeReferenceId if available, fall back to nodeId
+    const projectId = currentSearchContext.projectId;
+    const flowId = item.flowId || currentSearchContext.flowId;
+    const refId = item.nodeReferenceId || item.nodeId || "";
+    const deepLink = uiBaseUrl ? buildCognigyDeepLink(uiBaseUrl, projectId, flowId, refId) : null;
+
+    // Title — make it a link when we have a deep link, otherwise plain text
+    const titleEl = document.createElement(deepLink ? "a" : "h3");
     titleEl.className = "node-title";
     titleEl.textContent = node.label || "(No label)";
+    if (deepLink) {
+      titleEl.href = deepLink;
+      titleEl.target = "_blank";
+      titleEl.rel = "noopener noreferrer";
+    }
     cardEl.appendChild(titleEl);
 
     // Meta row
@@ -121,27 +140,22 @@ function renderProcessedNodes(items, query) {
       cardEl.appendChild(flowEl);
     }
 
-    // Deep link / reference ID
-    const projectId = currentSearchContext.projectId;
-    const flowId = item.flowId || currentSearchContext.flowId;
-    const refId = item.nodeReferenceId || "";
-
-    if (uiBaseUrl && projectId && flowId && refId) {
-      const deepLink = buildCognigyDeepLink(uiBaseUrl, projectId, flowId, refId);
-      if (deepLink) {
-        const linkEl = document.createElement("a");
-        linkEl.className = "deep-link";
-        linkEl.href = deepLink;
-        linkEl.target = "_blank";
-        linkEl.rel = "noopener noreferrer";
-        linkEl.textContent = "Open in Cognigy \u2197";
-        cardEl.appendChild(linkEl);
-      }
+    // Show "Open in Cognigy" link explicitly below meta (in addition to title link)
+    // so it's easy to spot even when the title is long
+    if (deepLink) {
+      const linkEl = document.createElement("a");
+      linkEl.className = "deep-link";
+      linkEl.href = deepLink;
+      linkEl.target = "_blank";
+      linkEl.rel = "noopener noreferrer";
+      linkEl.textContent = "Open in Cognigy \u2197";
+      cardEl.appendChild(linkEl);
     } else if (refId) {
+      // Deep links not configured — show copyable ref ID as fallback
       const refEl = document.createElement("p");
       refEl.className = "node-meta ref-id";
       refEl.textContent = `Ref: ${refId}`;
-      refEl.title = "Click to copy";
+      refEl.title = "Click to copy reference ID";
       refEl.style.cursor = "pointer";
       refEl.addEventListener("click", () => {
         navigator.clipboard.writeText(refId).catch(() => {});
