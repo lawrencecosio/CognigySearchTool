@@ -113,6 +113,13 @@ function renderProcessedNodes(items) {
     metaEl.textContent = `Type: ${node.type || "unknown"} | Node ID: ${item.nodeId || "n/a"}`;
     cardEl.appendChild(metaEl);
 
+    if (item.flowName) {
+      const flowEl = document.createElement("p");
+      flowEl.className = "node-meta";
+      flowEl.textContent = `Flow: ${item.flowName}`;
+      cardEl.appendChild(flowEl);
+    }
+
     const detailsEl = document.createElement("div");
     detailsEl.className = "details-grid";
     addDetailRow(detailsEl, "Reference ID", item.nodeReferenceId || "");
@@ -463,6 +470,9 @@ textSearchFormEl.addEventListener("submit", async (event) => {
 
     if (flowId) {
       setStatus(`Found ${data.count} matching node(s) in selected flow.`);
+      renderProcessedNodes(data.items || []);
+    } else if (data.mode === "all-flows-node-search") {
+      setStatus(`Found ${data.count} matching node(s) across ${data.flowCount} flow(s).`);
       renderProcessedNodes(data.items || []);
     } else {
       setStatus(`Found ${data.count} matching resource(s) in selected project.`);
