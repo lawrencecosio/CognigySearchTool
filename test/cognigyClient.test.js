@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { listFlowNodeTypes, searchAllFlowNodes, searchFlowNodes } = require("../src/cognigyClient");
+const { listCognigyFlows, listFlowNodeTypes, searchAllFlowNodes, searchFlowNodes } = require("../src/cognigyClient");
 
 function makeJsonResponse(payload) {
   return {
@@ -53,6 +53,65 @@ test("listFlowNodeTypes merges node types across chart endpoints", async () => {
     assert.deepEqual(calls, [
       "https://example.test/v2.0/flows/flow-1/chart/nodes",
       "https://example.test/v2.0/flows/flow-1/chart"
+    ]);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.COGNIGY_API_BASE_URL;
+    } else {
+      process.env.COGNIGY_API_BASE_URL = originalBaseUrl;
+    }
+    if (originalApiKey === undefined) {
+      delete process.env.COGNIGY_API_KEY;
+    } else {
+      process.env.COGNIGY_API_KEY = originalApiKey;
+    }
+  }
+});
+
+test("listCognigyFlows returns primaryLocaleId and referenceId from project details", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).endsWith("/new/v2.0/projects/project-1")) {
+      return makeJsonResponse({ _id: "project-1", primaryLocaleReference: "locale-en-1" });
+    }
+    if (String(url).includes("/v2.0/flows?projectId=project-1")) {
+      return makeJsonResponse({
+        _embedded: {
+          flows: [
+            {
+              _links: { self: { href: "https://example.test/v2.0/flows/flow-1" } },
+              properties: {
+                referenceId: "flow-ref-1",
+                name: "Main Flow",
+                description: "Primary flow"
+              }
+            }
+          ]
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${String(url)}`);
+  };
+
+  try {
+    const result = await listCognigyFlows({ projectId: "project-1" });
+    assert.equal(result.projectId, "project-1");
+    assert.equal(result.primaryLocaleId, "locale-en-1");
+    assert.equal(result.count, 1);
+    assert.equal(result.items[0].id, "flow-1");
+    assert.equal(result.items[0].referenceId, "flow-ref-1");
+    assert.deepEqual(calls, [
+      "https://example.test/new/v2.0/projects/project-1",
+      "https://example.test/v2.0/flows?projectId=project-1&limit=100"
     ]);
   } finally {
     global.fetch = originalFetch;
@@ -136,11 +195,14 @@ test("searchAllFlowNodes fans out to each flow and aggregates results with flowN
 
   global.fetch = async (url) => {
     const s = String(url);
+    if (s.endsWith("/new/v2.0/projects/proj-1")) {
+      return makeJsonResponse({ _id: "proj-1", primaryLocaleReference: "locale-1" });
+    }
     if (s.includes("/v2.0/flows?")) {
       return makeJsonResponse({
         items: [
-          { _id: "flow-a", name: "Alpha Flow" },
-          { _id: "flow-b", name: "Beta Flow" }
+          { _id: "flow-a", referenceId: "flow-ref-a", name: "Alpha Flow" },
+          { _id: "flow-b", referenceId: "flow-ref-b", name: "Beta Flow" }
         ]
       });
     }
@@ -164,6 +226,7 @@ test("searchAllFlowNodes fans out to each flow and aggregates results with flowN
     assert.equal(result.count, 1);
     assert.equal(result.items[0].nodeId, "n-1");
     assert.equal(result.items[0].flowId, "flow-a");
+    assert.equal(result.items[0].flowReferenceId, "flow-ref-a");
     assert.equal(result.items[0].flowName, "Alpha Flow");
     assert.equal(result.items[0].node.label, "Rating question");
   } finally {
@@ -191,12 +254,15 @@ test("searchAllFlowNodes with nodeType: returns only matching-type nodes; non-ma
 
   global.fetch = async (url) => {
     const s = String(url);
+    if (s.endsWith("/new/v2.0/projects/proj-1")) {
+      return makeJsonResponse({ _id: "proj-1", primaryLocaleReference: "locale-1" });
+    }
     // List flows
     if (s.includes("/v2.0/flows?")) {
       return makeJsonResponse({
         items: [
-          { _id: "flow-a", name: "Alpha Flow" },
-          { _id: "flow-b", name: "Beta Flow" }
+          { _id: "flow-a", referenceId: "flow-ref-a", name: "Alpha Flow" },
+          { _id: "flow-b", referenceId: "flow-ref-b", name: "Beta Flow" }
         ]
       });
     }
@@ -231,6 +297,7 @@ test("searchAllFlowNodes with nodeType: returns only matching-type nodes; non-ma
     assert.equal(result.items[0].nodeId, "n-1");
     assert.equal(result.items[0].node.type, "say");
     assert.equal(result.items[0].flowId, "flow-a");
+    assert.equal(result.items[0].flowReferenceId, "flow-ref-a");
     assert.equal(result.items[0].flowName, "Alpha Flow");
     // question nodes must be entirely absent
     assert.ok(result.items.every(i => i.node.type === "say"), "All items must be type 'say'");
@@ -260,11 +327,14 @@ test("searchAllFlowNodes: surfaces per-flow errors in response; partial results 
 
   global.fetch = async (url) => {
     const s = String(url);
+    if (s.endsWith("/new/v2.0/projects/proj-1")) {
+      return makeJsonResponse({ _id: "proj-1", primaryLocaleReference: "locale-1" });
+    }
     if (s.includes("/v2.0/flows?")) {
       return makeJsonResponse({
         items: [
-          { _id: "flow-ok", name: "Good Flow" },
-          { _id: "flow-err", name: "Error Flow" }
+          { _id: "flow-ok", referenceId: "flow-ref-ok", name: "Good Flow" },
+          { _id: "flow-err", referenceId: "flow-ref-err", name: "Error Flow" }
         ]
       });
     }
@@ -291,6 +361,7 @@ test("searchAllFlowNodes: surfaces per-flow errors in response; partial results 
 
     assert.equal(result.count, 1);
     assert.equal(result.items[0].flowName, "Good Flow");
+    assert.equal(result.items[0].flowReferenceId, "flow-ref-ok");
 
     // Error flow is captured — not silently dropped
     assert.ok(Array.isArray(result.flowErrors), "flowErrors must be an array");

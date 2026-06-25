@@ -55,10 +55,10 @@ function filterResults(items, filters) {
   });
 }
 
-function buildCognigyDeepLink(uiBaseUrl, projectId, flowId, referenceId) {
-  if (!uiBaseUrl) return null;
+function buildCognigyDeepLink(uiBaseUrl, projectId, localeId, flowId, referenceId) {
+  if (!uiBaseUrl || !projectId || !localeId || !flowId || !referenceId) return null;
   const base = uiBaseUrl.replace(/\/+$/, "");
-  return `${base}/agent/${projectId}/flows/${flowId}?nodeId=${referenceId}`;
+  return `${base}/project/${projectId}/${localeId}/flow/${flowId}/chart/${referenceId}`;
 }
 
 if (typeof module !== "undefined") {
