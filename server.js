@@ -6,6 +6,7 @@ const {
   listCognigyFlows,
   listCognigyProjects,
   listFlowNodeTypes,
+  searchAllFlowNodes,
   searchCognigy,
   searchFlowNodes
 } = require("./src/cognigyClient");
@@ -17,6 +18,7 @@ function createApp(deps = {}) {
     listCognigyFlows: deps.listCognigyFlows || listCognigyFlows,
     listCognigyProjects: deps.listCognigyProjects || listCognigyProjects,
     listFlowNodeTypes: deps.listFlowNodeTypes || listFlowNodeTypes,
+    searchAllFlowNodes: deps.searchAllFlowNodes || searchAllFlowNodes,
     searchCognigy: deps.searchCognigy || searchCognigy,
     searchFlowNodes: deps.searchFlowNodes || searchFlowNodes
   };
@@ -53,6 +55,11 @@ function createApp(deps = {}) {
     try {
       if (flowId) {
         const result = await api.searchFlowNodes({ flowId, query, nodeType });
+        return res.json(result);
+      }
+
+      if (hasQuery && projectId) {
+        const result = await api.searchAllFlowNodes({ projectId, query, limit });
         return res.json(result);
       }
 

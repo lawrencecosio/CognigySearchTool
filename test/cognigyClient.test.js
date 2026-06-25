@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { listFlowNodeTypes, searchFlowNodes } = require("../src/cognigyClient");
+const { listFlowNodeTypes, searchAllFlowNodes, searchFlowNodes } = require("../src/cognigyClient");
 
 function makeJsonResponse(payload) {
   return {
@@ -111,6 +111,61 @@ test("searchFlowNodes returns overwriteAnalytics nodes via nodeType mode", async
     assert.equal(result.upstreamCount, 1);
     assert.equal(result.items[0].node.type, "overwriteAnalytics");
     assert.equal(result.items[0].nodeId, "n-1");
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.COGNIGY_API_BASE_URL;
+    } else {
+      process.env.COGNIGY_API_BASE_URL = originalBaseUrl;
+    }
+    if (originalApiKey === undefined) {
+      delete process.env.COGNIGY_API_KEY;
+    } else {
+      process.env.COGNIGY_API_KEY = originalApiKey;
+    }
+  }
+});
+
+test("searchAllFlowNodes fans out to each flow and aggregates results with flowName", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  global.fetch = async (url) => {
+    const s = String(url);
+    if (s.includes("/v2.0/flows?")) {
+      return makeJsonResponse({
+        items: [
+          { _id: "flow-a", name: "Alpha Flow" },
+          { _id: "flow-b", name: "Beta Flow" }
+        ]
+      });
+    }
+    if (s.includes("/v2.0/flows/flow-a/chart/nodes/search")) {
+      return makeJsonResponse({ items: [{ nodeId: "n-1", nodeReferenceId: "r-1", matches: [] }] });
+    }
+    if (s.endsWith("/v2.0/flows/flow-a/chart/nodes/n-1")) {
+      return makeJsonResponse({ _id: "n-1", type: "say", label: "Rating question" });
+    }
+    if (s.includes("/v2.0/flows/flow-b/chart/nodes/search")) {
+      return makeJsonResponse({ items: [] });
+    }
+    throw new Error(`Unexpected URL: ${s}`);
+  };
+
+  try {
+    const result = await searchAllFlowNodes({ projectId: "proj-1", query: "On a scale of 1-5", limit: 20 });
+
+    assert.equal(result.mode, "all-flows-node-search");
+    assert.equal(result.flowCount, 2);
+    assert.equal(result.count, 1);
+    assert.equal(result.items[0].nodeId, "n-1");
+    assert.equal(result.items[0].flowId, "flow-a");
+    assert.equal(result.items[0].flowName, "Alpha Flow");
+    assert.equal(result.items[0].node.label, "Rating question");
   } finally {
     global.fetch = originalFetch;
     if (originalBaseUrl === undefined) {

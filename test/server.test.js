@@ -34,15 +34,22 @@ test("GET /api/search returns 400 when q and nodeType are both provided", async 
   }
 });
 
-test("GET /api/search calls text search handler for project search", async () => {
+test("GET /api/search calls searchAllFlowNodes when projectId is set and flowId is not", async () => {
   let called = false;
   const app = createApp({
-    searchCognigy: async ({ query, limit, projectId }) => {
+    searchAllFlowNodes: async ({ projectId, query, limit }) => {
       called = true;
+      assert.equal(projectId, "project-1");
       assert.equal(query, "welcome");
       assert.equal(limit, 15);
-      assert.equal(projectId, "project-1");
-      return { mode: "text", count: 1, items: [{ _id: "1", name: "Welcome" }] };
+      return {
+        mode: "all-flows-node-search",
+        projectId,
+        query,
+        flowCount: 2,
+        count: 1,
+        items: [{ nodeId: "n-1", flowId: "flow-1", flowName: "Main Flow", node: { type: "say" } }]
+      };
     }
   });
   const { server, baseUrl } = await startServer(app);
@@ -51,8 +58,32 @@ test("GET /api/search calls text search handler for project search", async () =>
     const response = await fetch(`${baseUrl}/api/search?q=welcome&limit=15&projectId=project-1`);
     assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.mode, "text");
+    assert.equal(payload.mode, "all-flows-node-search");
+    assert.equal(payload.flowCount, 2);
     assert.equal(payload.count, 1);
+    assert.equal(payload.items[0].flowName, "Main Flow");
+    assert.equal(called, true);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("GET /api/search falls back to searchCognigy when no projectId", async () => {
+  let called = false;
+  const app = createApp({
+    searchCognigy: async ({ query, limit, projectId }) => {
+      called = true;
+      assert.equal(query, "welcome");
+      assert.equal(limit, 15);
+      assert.equal(projectId, "");
+      return { count: 0, items: [] };
+    }
+  });
+  const { server, baseUrl } = await startServer(app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/search?q=welcome&limit=15`);
+    assert.equal(response.status, 200);
     assert.equal(called, true);
   } finally {
     await closeServer(server);
