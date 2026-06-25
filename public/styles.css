@@ -82,6 +82,23 @@ button {
 .node-title {
   margin: 0 0 0.25rem;
   font-size: 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.node-title:hover {
+  text-decoration: underline;
+  color: #0969da;
+}
+
+.deep-link-hint {
+  font-size: 0.85rem;
+  color: #7d4e17;
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
 .node-meta {
