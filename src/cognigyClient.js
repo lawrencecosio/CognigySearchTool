@@ -371,8 +371,42 @@ async function searchFlowNodes({ flowId, query = "", nodeType = "" }) {
   };
 }
 
+async function searchAllFlowNodes({ projectId, query, limit }) {
+  if (!projectId) {
+    throw new Error("Project ID is required to search all flows.");
+  }
+  const normalizedQuery = String(query).trim();
+  if (!normalizedQuery) {
+    throw new Error("Query is required to search all flows.");
+  }
+
+  const flowsResult = await listCognigyFlows({ projectId });
+
+  const searchPromises = flowsResult.items.map(async (flow) => {
+    try {
+      const result = await searchFlowNodes({ flowId: flow.id, query: normalizedQuery });
+      return result.items.map((item) => ({ ...item, flowId: flow.id, flowName: flow.name }));
+    } catch (_error) {
+      return [];
+    }
+  });
+
+  const resultArrays = await Promise.all(searchPromises);
+  const allItems = resultArrays.flat().slice(0, limit);
+
+  return {
+    mode: "all-flows-node-search",
+    projectId,
+    query: normalizedQuery,
+    flowCount: flowsResult.count,
+    count: allItems.length,
+    items: allItems
+  };
+}
+
 module.exports = {
   searchCognigy,
+  searchAllFlowNodes,
   listCognigyProjects,
   listCognigyFlows,
   listFlowNodeTypes,
