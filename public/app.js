@@ -415,7 +415,14 @@ searchFormEl.addEventListener("submit", async (event) => {
     if (isNodeType)       statusMsg = `Found ${data.count} node(s) of type '${nodeType}' in selected flow.`;
     else if (isSingleFlow) statusMsg = `Found ${data.count} matching node(s) in selected flow.`;
     else                   statusMsg = `Found ${data.count} matching node(s) across ${data.flowCount} flow(s).`;
-    setStatus(statusMsg);
+
+    const flowErrors = Array.isArray(data.flowErrors) ? data.flowErrors : [];
+    if (flowErrors.length > 0) {
+      const errNames = flowErrors.map(e => e.flowName).join(", ");
+      statusMsg += ` ⚠ ${flowErrors.length} flow(s) could not be searched (${errNames}) — check API permissions.`;
+    }
+
+    setStatus(statusMsg, flowErrors.length > 0 && data.count === 0);
 
     // Apply initial client-side nodeType filter if text+nodeType were both provided
     const itemsToShow = (query && nodeType)
