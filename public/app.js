@@ -1,14 +1,28 @@
-const form = document.getElementById("search-form");
 const statusEl = document.getElementById("status");
 const resultsPanelEl = document.getElementById("results-panel");
 const processedResultsEl = document.getElementById("processed-results");
 const jsonResultsEl = document.getElementById("json-results");
 const processedViewButtonEl = document.getElementById("processed-view-btn");
 const jsonViewButtonEl = document.getElementById("json-view-btn");
-const projectSelectEl = document.getElementById("projectId");
+
+const textTabButtonEl = document.getElementById("text-tab-btn");
+const nodeTypeTabButtonEl = document.getElementById("node-type-tab-btn");
+const textTabPanelEl = document.getElementById("text-tab-panel");
+const nodeTypeTabPanelEl = document.getElementById("node-type-tab-panel");
+
+const textSearchFormEl = document.getElementById("text-search-form");
+const nodeTypeSearchFormEl = document.getElementById("node-type-search-form");
+
+const textProjectSelectEl = document.getElementById("text-projectId");
+const textFlowSelectEl = document.getElementById("text-flowId");
+const nodeProjectSelectEl = document.getElementById("node-projectId");
+const nodeFlowSelectEl = document.getElementById("node-flowId");
+const nodeTypeSelectEl = document.getElementById("nodeType");
+
 const refreshProjectsButtonEl = document.getElementById("refresh-projects");
-const flowSelectEl = document.getElementById("flowId");
-const refreshFlowsButtonEl = document.getElementById("refresh-flows");
+const refreshNodeProjectsButtonEl = document.getElementById("refresh-node-projects");
+const refreshTextFlowsButtonEl = document.getElementById("refresh-text-flows");
+const refreshNodeFlowsButtonEl = document.getElementById("refresh-node-flows");
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -27,6 +41,16 @@ function switchView(mode) {
   jsonResultsEl.classList.toggle("hidden", showProcessed);
   processedViewButtonEl.classList.toggle("active", showProcessed);
   jsonViewButtonEl.classList.toggle("active", !showProcessed);
+}
+
+function setActiveSearchTab(tab) {
+  const isTextTab = tab === "text";
+  textTabPanelEl.classList.toggle("hidden", !isTextTab);
+  nodeTypeTabPanelEl.classList.toggle("hidden", isTextTab);
+  textTabButtonEl.classList.toggle("active", isTextTab);
+  nodeTypeTabButtonEl.classList.toggle("active", !isTextTab);
+  textTabButtonEl.setAttribute("aria-selected", isTextTab ? "true" : "false");
+  nodeTypeTabButtonEl.setAttribute("aria-selected", isTextTab ? "false" : "true");
 }
 
 function addDetailRow(container, label, value) {
@@ -205,70 +229,135 @@ function renderProcessedResources(items) {
   }
 }
 
-function renderProjects(items, defaultProjectId) {
-  const previousSelection = projectSelectEl.value;
-  projectSelectEl.innerHTML = "";
+function renderProjects(selectEl, items, defaultProjectId, emptyLabel) {
+  const previousSelection = selectEl.value;
+  selectEl.innerHTML = "";
 
-  const allProjectsOption = document.createElement("option");
-  allProjectsOption.value = "";
-  allProjectsOption.textContent = "All projects";
-  projectSelectEl.appendChild(allProjectsOption);
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = emptyLabel;
+  selectEl.appendChild(defaultOption);
 
   for (const project of items) {
     const option = document.createElement("option");
     option.value = project.id;
     option.textContent = project.name;
-    projectSelectEl.appendChild(option);
+    selectEl.appendChild(option);
   }
 
   if (previousSelection && items.some((project) => project.id === previousSelection)) {
-    projectSelectEl.value = previousSelection;
+    selectEl.value = previousSelection;
     return;
   }
 
   if (defaultProjectId && items.some((project) => project.id === defaultProjectId)) {
-    projectSelectEl.value = defaultProjectId;
+    selectEl.value = defaultProjectId;
   }
 }
 
-function renderFlows(items) {
-  const previousSelection = flowSelectEl.value;
-  flowSelectEl.innerHTML = "";
+function renderFlows(selectEl, items, defaultLabel) {
+  const previousSelection = selectEl.value;
+  selectEl.innerHTML = "";
 
   const defaultOption = document.createElement("option");
   defaultOption.value = "";
-  defaultOption.textContent = "All flows (project-wide search)";
-  flowSelectEl.appendChild(defaultOption);
+  defaultOption.textContent = defaultLabel;
+  selectEl.appendChild(defaultOption);
 
   for (const flow of items) {
     const option = document.createElement("option");
     option.value = flow.id;
     option.textContent = flow.name;
-    flowSelectEl.appendChild(option);
+    selectEl.appendChild(option);
   }
 
   if (previousSelection && items.some((flow) => flow.id === previousSelection)) {
-    flowSelectEl.value = previousSelection;
+    selectEl.value = previousSelection;
   }
 }
 
-async function loadFlows() {
-  const projectId = projectSelectEl.value;
+function renderNodeTypes(items) {
+  const previousSelection = nodeTypeSelectEl.value;
+  nodeTypeSelectEl.innerHTML = "";
+
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Select node type";
+  nodeTypeSelectEl.appendChild(defaultOption);
+
+  for (const nodeType of items) {
+    const option = document.createElement("option");
+    option.value = nodeType;
+    option.textContent = nodeType;
+    nodeTypeSelectEl.appendChild(option);
+  }
+
+  nodeTypeSelectEl.disabled = !nodeFlowSelectEl.value || !items.length;
+  if (previousSelection && items.includes(previousSelection)) {
+    nodeTypeSelectEl.value = previousSelection;
+  }
+}
+
+async function loadFlowsForSelect({ projectId, flowSelectEl, defaultLabel }) {
   if (!projectId) {
-    renderFlows([]);
+    renderFlows(flowSelectEl, [], defaultLabel);
+    return [];
+  }
+
+  const response = await fetch(`/api/flows?projectId=${encodeURIComponent(projectId)}`);
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data && data.error ? data.error : "Failed to load flows";
+    throw new Error(message);
+  }
+  const items = data.items || [];
+  renderFlows(flowSelectEl, items, defaultLabel);
+  return items;
+}
+
+async function loadTextFlows() {
+  try {
+    await loadFlowsForSelect({
+      projectId: textProjectSelectEl.value,
+      flowSelectEl: textFlowSelectEl,
+      defaultLabel: "All flows (project-wide search)"
+    });
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Failed to load flows", true);
+  }
+}
+
+async function loadNodeTypes() {
+  const flowId = nodeFlowSelectEl.value;
+  if (!flowId) {
+    renderNodeTypes([]);
     return;
   }
 
   try {
-    const response = await fetch(`/api/flows?projectId=${encodeURIComponent(projectId)}`);
+    const response = await fetch(`/api/node-types?flowId=${encodeURIComponent(flowId)}`);
     const data = await response.json();
     if (!response.ok) {
-      const message = data && data.error ? data.error : "Failed to load flows";
+      const message = data && data.error ? data.error : "Failed to load node types";
       throw new Error(message);
     }
-
-    renderFlows(data.items || []);
+    renderNodeTypes(data.items || []);
   } catch (error) {
+    renderNodeTypes([]);
+    setStatus(error instanceof Error ? error.message : "Failed to load node types", true);
+  }
+}
+
+async function loadNodeFlows() {
+  try {
+    await loadFlowsForSelect({
+      projectId: nodeProjectSelectEl.value,
+      flowSelectEl: nodeFlowSelectEl,
+      defaultLabel: "Select flow"
+    });
+    await loadNodeTypes();
+  } catch (error) {
+    renderNodeTypes([]);
     setStatus(error instanceof Error ? error.message : "Failed to load flows", true);
   }
 }
@@ -282,34 +371,62 @@ async function loadProjects() {
       throw new Error(message);
     }
 
-    renderProjects(data.items || [], data.defaultProjectId || "");
-    await loadFlows();
+    const items = data.items || [];
+    const defaultProjectId = data.defaultProjectId || "";
+
+    renderProjects(textProjectSelectEl, items, defaultProjectId, "Select project");
+    renderProjects(nodeProjectSelectEl, items, defaultProjectId, "Select project");
+    await Promise.all([loadTextFlows(), loadNodeFlows()]);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Failed to load projects", true);
   }
 }
 
+textTabButtonEl.addEventListener("click", () => {
+  setActiveSearchTab("text");
+});
+
+nodeTypeTabButtonEl.addEventListener("click", () => {
+  setActiveSearchTab("node-type");
+});
+
 refreshProjectsButtonEl.addEventListener("click", () => {
   loadProjects();
 });
 
-projectSelectEl.addEventListener("change", () => {
-  loadFlows();
+refreshNodeProjectsButtonEl.addEventListener("click", () => {
+  loadProjects();
 });
 
-refreshFlowsButtonEl.addEventListener("click", () => {
-  loadFlows();
+refreshTextFlowsButtonEl.addEventListener("click", () => {
+  loadTextFlows();
+});
+
+refreshNodeFlowsButtonEl.addEventListener("click", () => {
+  loadNodeFlows();
+});
+
+textProjectSelectEl.addEventListener("change", () => {
+  loadTextFlows();
+});
+
+nodeProjectSelectEl.addEventListener("change", () => {
+  loadNodeFlows();
+});
+
+nodeFlowSelectEl.addEventListener("change", () => {
+  loadNodeTypes();
 });
 
 processedViewButtonEl.addEventListener("click", () => switchView("processed"));
 jsonViewButtonEl.addEventListener("click", () => switchView("json"));
 
-form.addEventListener("submit", async (event) => {
+textSearchFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const query = form.query.value.trim();
-  const limit = form.limit.value;
-  const projectId = projectSelectEl.value;
-  const flowId = flowSelectEl.value;
+  const query = textSearchFormEl.query.value.trim();
+  const limit = textSearchFormEl.limit.value;
+  const projectId = textProjectSelectEl.value;
+  const flowId = textFlowSelectEl.value;
 
   if (!query) {
     setStatus("Please enter a search query.", true);
@@ -323,18 +440,18 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  setStatus("Searching...");
+  setStatus("Searching text...");
   clearResults();
 
   try {
     const params = new URLSearchParams({
       q: query,
-      limit: String(limit)
+      limit: String(limit),
+      projectId
     });
-    if (projectId) {
-      params.set("projectId", projectId);
+    if (flowId) {
+      params.set("flowId", flowId);
     }
-    params.set("flowId", flowId);
 
     const response = await fetch(`/api/search?${params.toString()}`);
     const data = await response.json();
@@ -360,4 +477,58 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+nodeTypeSearchFormEl.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const projectId = nodeProjectSelectEl.value;
+  const flowId = nodeFlowSelectEl.value;
+  const nodeType = nodeTypeSearchFormEl.nodeType.value;
+
+  if (!projectId) {
+    setStatus("Please select a project.", true);
+    clearResults();
+    return;
+  }
+
+  if (!flowId) {
+    setStatus("Please select a flow.", true);
+    clearResults();
+    return;
+  }
+
+  if (!nodeType) {
+    setStatus("Please select a node type.", true);
+    clearResults();
+    return;
+  }
+
+  setStatus("Searching by node type...");
+  clearResults();
+
+  try {
+    const params = new URLSearchParams({
+      nodeType,
+      projectId,
+      flowId
+    });
+    const response = await fetch(`/api/search?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      const message = data && data.error ? data.error : "Search failed";
+      throw new Error(message);
+    }
+
+    setStatus(`Found ${data.count} node(s) with type '${nodeType}' in selected flow.`);
+    renderProcessedNodes(data.items || []);
+    jsonResultsEl.textContent = JSON.stringify(data.items || [], null, 2);
+    resultsPanelEl.classList.remove("hidden");
+    switchView("processed");
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Search failed", true);
+    clearResults();
+  }
+});
+
+setActiveSearchTab("text");
+renderNodeTypes([]);
 loadProjects();
