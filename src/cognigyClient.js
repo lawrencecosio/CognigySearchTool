@@ -371,20 +371,26 @@ async function searchFlowNodes({ flowId, query = "", nodeType = "" }) {
   };
 }
 
-async function searchAllFlowNodes({ projectId, query, limit }) {
+async function searchAllFlowNodes({ projectId, query, limit, nodeType }) {
   if (!projectId) {
     throw new Error("Project ID is required to search all flows.");
   }
-  const normalizedQuery = String(query).trim();
-  if (!normalizedQuery) {
-    throw new Error("Query is required to search all flows.");
+  const normalizedQuery = String(query || "").trim();
+  const normalizedNodeType = String(nodeType || "").trim();
+  const hasQuery = Boolean(normalizedQuery);
+  const hasNodeType = Boolean(normalizedNodeType);
+
+  if (hasQuery === hasNodeType) {
+    throw new Error("Provide exactly one of query or nodeType for all-flows search.");
   }
 
   const flowsResult = await listCognigyFlows({ projectId });
 
   const searchPromises = flowsResult.items.map(async (flow) => {
     try {
-      const result = await searchFlowNodes({ flowId: flow.id, query: normalizedQuery });
+      const result = hasNodeType
+        ? await searchFlowNodes({ flowId: flow.id, nodeType: normalizedNodeType })
+        : await searchFlowNodes({ flowId: flow.id, query: normalizedQuery });
       return result.items.map((item) => ({ ...item, flowId: flow.id, flowName: flow.name }));
     } catch (_error) {
       return [];
@@ -398,6 +404,7 @@ async function searchAllFlowNodes({ projectId, query, limit }) {
     mode: "all-flows-node-search",
     projectId,
     query: normalizedQuery,
+    nodeType: normalizedNodeType,
     flowCount: flowsResult.count,
     count: allItems.length,
     items: allItems

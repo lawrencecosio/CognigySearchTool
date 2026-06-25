@@ -69,16 +69,19 @@ Then open:
 
 `http://localhost:3000`
 
-## Search modes
+## Search
 
-The app has two tabs:
+Select a **project**, then optionally a **flow**. Enter a search query, a node type, or both:
 
-- **Search by text**
-  - Select a project.
-  - Flow is optional (`All flows` runs project-wide text search).
-- **Search by node type**
-  - Select project first, then flow.
-  - Node type dropdown is populated from the selected flow's available node types.
+- **Search text** — finds nodes whose content (labels, button text, conditions, code, etc.) contains the query. Works across all flows in the project or within a single selected flow.
+- **Node type** — finds all nodes of that type (e.g. `say`, `question`, `code`). Works across all flows or a single flow. When a flow is selected, the field autocompletes with known node types.
+- **Both** — text search runs server-side; node type becomes a client-side filter on the results.
+
+After results load, use the **filter bar** to narrow by node type or flow without re-querying. The result count updates live.
+
+Each result card shows the **matched field and a highlighted excerpt** of the content where the query was found.
+
+If `COGNIGY_UI_BASE_URL` is set in `.env`, each card shows an **"Open in Cognigy ↗"** link that opens the exact node in the Cognigy UI. If not set, a copyable reference ID is shown instead.
 
 ## Stop the app
 
