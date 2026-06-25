@@ -27,6 +27,14 @@ function extractItems(payload) {
     return payload;
   }
   if (payload && typeof payload === "object") {
+    if (payload._embedded && typeof payload._embedded === "object") {
+      const embeddedValues = Object.values(payload._embedded);
+      for (const value of embeddedValues) {
+        if (Array.isArray(value)) {
+          return value;
+        }
+      }
+    }
     if (Array.isArray(payload.items)) {
       return payload.items;
     }
@@ -145,8 +153,34 @@ async function listCognigyProjects() {
 
   const payload = await fetchCognigyJson(url, apiKey);
   const items = extractItems(payload)
-    .filter((item) => item && typeof item === "object" && item._id && item.name)
-    .map((item) => ({ id: String(item._id), name: String(item.name) }))
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const selfHref = item._links && item._links.self && typeof item._links.self.href === "string"
+        ? item._links.self.href
+        : "";
+      const idMatch = selfHref.match(/\/flows\/([^/]+)$/);
+      const id = item._id || (idMatch ? idMatch[1] : "");
+      const referenceId =
+        (item.properties && typeof item.properties.referenceId === "string" && item.properties.referenceId) ||
+        (typeof item.referenceId === "string" && item.referenceId) ||
+        "";
+      const name =
+        (item.properties && typeof item.properties.name === "string" && item.properties.name) ||
+        (typeof item.name === "string" && item.name) ||
+        "";
+      const description =
+        (item.properties && typeof item.properties.description === "string" && item.properties.description) ||
+        (typeof item.description === "string" && item.description) ||
+        "";
+
+      return {
+        id: String(id),
+        referenceId: String(referenceId),
+        name: String(name),
+        description: String(description)
+      };
+    })
+    .filter((item) => item.id && item.name)
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return {
@@ -170,18 +204,47 @@ async function listCognigyFlows({ projectId }) {
   url.searchParams.set("projectId", selectedProjectId);
   url.searchParams.set("limit", "100");
 
-  const payload = await fetchCognigyJson(url, apiKey);
-  const items = extractItems(payload)
-    .filter((item) => item && typeof item === "object" && item._id && item.name)
-    .map((item) => ({
-      id: String(item._id),
-      name: String(item.name),
-      description: item.description ? String(item.description) : ""
-    }))
+  const [projectPayload, flowsPayload] = await Promise.all([
+    fetchCognigyJson(new URL(`${baseUrl}/new/v2.0/projects/${selectedProjectId}`), apiKey),
+    fetchCognigyJson(url, apiKey)
+  ]);
+
+  const items = extractItems(flowsPayload)
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const selfHref = item._links && item._links.self && typeof item._links.self.href === "string"
+        ? item._links.self.href
+        : "";
+      const idMatch = selfHref.match(/\/flows\/([^/]+)$/);
+      const id = item._id || (idMatch ? idMatch[1] : "");
+      const referenceId =
+        (item.properties && typeof item.properties.referenceId === "string" && item.properties.referenceId) ||
+        (typeof item.referenceId === "string" && item.referenceId) ||
+        "";
+      const name =
+        (item.properties && typeof item.properties.name === "string" && item.properties.name) ||
+        (typeof item.name === "string" && item.name) ||
+        "";
+      const description =
+        (item.properties && typeof item.properties.description === "string" && item.properties.description) ||
+        (typeof item.description === "string" && item.description) ||
+        "";
+
+      return {
+        id: String(id),
+        referenceId: String(referenceId),
+        name: String(name),
+        description: String(description)
+      };
+    })
+    .filter((item) => item.id && item.name)
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     projectId: selectedProjectId,
+    primaryLocaleId: projectPayload && typeof projectPayload === "object" && projectPayload.primaryLocaleReference
+      ? String(projectPayload.primaryLocaleReference)
+      : "",
     count: items.length,
     items
   };
@@ -403,7 +466,12 @@ async function searchAllFlowNodes({ projectId, query, limit, nodeType }) {
     const flow = flowsResult.items[i];
     if (outcome.status === "fulfilled") {
       for (const item of outcome.value.items) {
-        allItems.push({ ...item, flowId: flow.id, flowName: flow.name });
+        allItems.push({
+          ...item,
+          flowId: flow.id,
+          flowReferenceId: flow.referenceId || "",
+          flowName: flow.name
+        });
       }
     } else {
       flowErrors.push({

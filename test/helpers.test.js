@@ -98,26 +98,32 @@ test("buildCognigyDeepLink: returns exact URL when all params present", () => {
   const url = buildCognigyDeepLink(
     "https://app.cognigy.example.com",
     "proj-1",
+    "locale-1",
     "flow-1",
-    "ref-uuid-1"
+    "node-1"
   );
-  assert.equal(url, "https://app.cognigy.example.com/agent/proj-1/flows/flow-1?nodeId=ref-uuid-1");
+  assert.equal(url, "https://app.cognigy.example.com/project/proj-1/locale-1/flow/flow-1/chart/node-1");
 });
 
 test("buildCognigyDeepLink: strips trailing slash from uiBaseUrl to avoid double slash", () => {
   const url = buildCognigyDeepLink(
     "https://app.cognigy.example.com/",
     "proj-1",
+    "locale-1",
     "flow-1",
-    "ref-uuid-1"
+    "node-1"
   );
-  assert.equal(url, "https://app.cognigy.example.com/agent/proj-1/flows/flow-1?nodeId=ref-uuid-1");
+  assert.equal(url, "https://app.cognigy.example.com/project/proj-1/locale-1/flow/flow-1/chart/node-1");
 });
 
 test("buildCognigyDeepLink: returns null when uiBaseUrl is null", () => {
-  assert.equal(buildCognigyDeepLink(null, "proj-1", "flow-1", "ref-uuid-1"), null);
+  assert.equal(buildCognigyDeepLink(null, "proj-1", "locale-1", "flow-1", "node-1"), null);
 });
 
 test("buildCognigyDeepLink: returns null when uiBaseUrl is empty string", () => {
-  assert.equal(buildCognigyDeepLink("", "proj-1", "flow-1", "ref-uuid-1"), null);
+  assert.equal(buildCognigyDeepLink("", "proj-1", "locale-1", "flow-1", "node-1"), null);
+});
+
+test("buildCognigyDeepLink: returns null when referenceId is missing", () => {
+  assert.equal(buildCognigyDeepLink("https://app.cognigy.example.com", "proj-1", "locale-1", "flow-1", ""), null);
 });

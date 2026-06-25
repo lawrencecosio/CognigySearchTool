@@ -28,7 +28,7 @@ const clearFiltersBtnEl    = document.getElementById("clear-filters");
 // ─── State ─────────────────────────────────────────────────────────────────
 let uiBaseUrl = null;
 let currentAllItems = [];
-let currentSearchContext = { projectId: "", flowId: "" };
+let currentSearchContext = { projectId: "", localeId: "", flowId: "" };
 
 // ─── Utilities ─────────────────────────────────────────────────────────────
 function setStatus(message, isError = false) {
@@ -110,11 +110,12 @@ function renderProcessedNodes(items, query) {
     const cardEl = document.createElement("article");
     cardEl.className = "node-card";
 
-    // Deep link — use nodeReferenceId if available, fall back to nodeId
+    // Deep link — Cognigy needs the node reference ID for chart routing
     const projectId = currentSearchContext.projectId;
+    const localeId = item.node.localeReference || currentSearchContext.localeId;
     const flowId = item.flowId || currentSearchContext.flowId;
-    const refId = item.nodeReferenceId || item.nodeId || "";
-    const deepLink = uiBaseUrl ? buildCognigyDeepLink(uiBaseUrl, projectId, flowId, refId) : null;
+    const nodeId = item.nodeId || "";
+    const deepLink = uiBaseUrl ? buildCognigyDeepLink(uiBaseUrl, projectId, localeId, flowId, nodeId) : null;
 
     // Title — make it a link when we have a deep link, otherwise plain text
     const titleEl = document.createElement(deepLink ? "a" : "h3");
@@ -150,17 +151,17 @@ function renderProcessedNodes(items, query) {
       linkEl.rel = "noopener noreferrer";
       linkEl.textContent = "Open in Cognigy \u2197";
       cardEl.appendChild(linkEl);
-    } else if (refId) {
+    } else if (item.nodeId || item.nodeReferenceId) {
       // Deep links not configured — show copyable ref ID as fallback
       const refEl = document.createElement("p");
       refEl.className = "node-meta ref-id";
-      refEl.textContent = `Ref: ${refId}`;
+      refEl.textContent = `Ref: ${item.nodeId || item.nodeReferenceId}`;
       refEl.title = "Click to copy reference ID";
       refEl.style.cursor = "pointer";
       refEl.addEventListener("click", () => {
-        navigator.clipboard.writeText(refId).catch(() => {});
+        navigator.clipboard.writeText(item.nodeId || item.nodeReferenceId).catch(() => {});
         refEl.textContent = "Copied!";
-        setTimeout(() => { refEl.textContent = `Ref: ${refId}`; }, 1500);
+        setTimeout(() => { refEl.textContent = `Ref: ${item.nodeId || item.nodeReferenceId}`; }, 1500);
       });
       cardEl.appendChild(refEl);
     }
@@ -320,6 +321,11 @@ async function loadFlows() {
     const response = await fetch(`/api/flows?projectId=${encodeURIComponent(projectId)}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Failed to load flows");
+    currentSearchContext = {
+      ...currentSearchContext,
+      projectId,
+      localeId: data.primaryLocaleId || data.primaryLocaleReference || ""
+    };
     renderFlows(data.items || []);
     await loadNodeTypeDatalist(flowSelectEl.value);
   } catch (err) {
@@ -406,7 +412,7 @@ searchFormEl.addEventListener("submit", async (event) => {
   setStatus("Searching…");
   clearResults();
 
-  currentSearchContext = { projectId, flowId };
+  currentSearchContext = { ...currentSearchContext, projectId, flowId };
 
   try {
     const params = new URLSearchParams({ limit: String(limit), projectId });
