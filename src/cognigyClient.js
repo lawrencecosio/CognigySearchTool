@@ -3,6 +3,15 @@ const DEFAULT_QUERY_PARAM = "search";
 const DEFAULT_PROJECTS_PATH = "/v2.0/projects";
 const DEFAULT_FLOWS_PATH = "/v2.0/flows";
 
+// Node types (normalized: lowercase, no spaces/hyphens/underscores) that can
+// reference another flow. Filtering to these before fetching full node details
+// avoids unnecessary API calls for say/question/condition/etc. nodes.
+const CALLER_NODE_TYPES = new Set(["executeflow", "goto"]);
+
+function normalizeNodeType(type) {
+  return String(type).toLowerCase().replace(/[\s_-]/g, "");
+}
+
 function getRequiredEnv(name) {
   const value = process.env[name];
   if (!value) {
@@ -496,11 +505,145 @@ async function searchAllFlowNodes({ projectId, query, limit, nodeType }) {
   };
 }
 
+function scanNodeForFlowReference(value, targetId, targetReferenceId, depth = 0) {
+  if (depth > 8 || value == null) return false;
+  if (typeof value === "string") {
+    return value === targetId || Boolean(targetReferenceId && value === targetReferenceId);
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => scanNodeForFlowReference(item, targetId, targetReferenceId, depth + 1));
+  }
+  if (typeof value === "object") {
+    return Object.values(value).some((v) => scanNodeForFlowReference(v, targetId, targetReferenceId, depth + 1));
+  }
+  return false;
+}
+
+async function findFlowCallers({ targetFlowId, projectId }) {
+  if (!targetFlowId) throw new Error("targetFlowId is required.");
+  if (!projectId) throw new Error("projectId is required.");
+
+  const baseUrl = normalizeBaseUrl(getRequiredEnv("COGNIGY_API_BASE_URL"));
+  const apiKey = getRequiredEnv("COGNIGY_API_KEY");
+
+  const flowsResult = await listCognigyFlows({ projectId });
+  const targetFlow = flowsResult.items.find((f) => f.id === targetFlowId);
+  const targetReferenceId = targetFlow ? targetFlow.referenceId : "";
+  const otherFlows = flowsResult.items.filter((f) => f.id !== targetFlowId);
+
+  // Concurrency limiter — avoids hammering the Cognigy API with thousands of
+  // parallel requests when a project has many flows and nodes.
+  const MAX_CONCURRENT = 8;
+  let activeCount = 0;
+  const waitQueue = [];
+
+  function acquireSlot() {
+    if (activeCount < MAX_CONCURRENT) {
+      activeCount++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => waitQueue.push(resolve));
+  }
+
+  function releaseSlot() {
+    if (waitQueue.length > 0) {
+      // Pass our slot directly to the next waiter (activeCount stays the same).
+      waitQueue.shift()();
+    } else {
+      activeCount--;
+    }
+  }
+
+  async function limitedFetch(url) {
+    await acquireSlot();
+    try {
+      return await fetchCognigyJson(url, apiKey);
+    } finally {
+      releaseSlot();
+    }
+  }
+
+  // For each other flow: fetch the chart (all nodes with basic metadata), then
+  // fetch each node's full config and scan it recursively for the target flow's
+  // _id or referenceId. The text-search endpoint does not index config fields
+  // where flow references are stored, so a full scan is required.
+  const settled = await Promise.allSettled(
+    otherFlows.map(async (flow) => {
+      const chartUrl = new URL(`${baseUrl}/v2.0/flows/${flow.id}/chart`);
+      const chartPayload = await limitedFetch(chartUrl);
+      const chartNodes = extractFlowChartNodes(chartPayload);
+
+      // Only scan node types that can reference another flow — skip say/question/etc.
+      const candidateNodes = chartNodes.filter((node) =>
+        CALLER_NODE_TYPES.has(normalizeNodeType(node.type || ""))
+      );
+
+      const nodeDetailResults = await Promise.allSettled(
+        candidateNodes.map(async (node) => {
+          const nodeId = String(node._id || "");
+          if (!nodeId) return null;
+          const nodeUrl = new URL(`${baseUrl}/v2.0/flows/${flow.id}/chart/nodes/${nodeId}`);
+          const fullNode = await limitedFetch(nodeUrl);
+          return { node, fullNode, nodeId };
+        })
+      );
+
+      const matchingNodes = [];
+      for (const outcome of nodeDetailResults) {
+        if (outcome.status !== "fulfilled" || !outcome.value) continue;
+        const { node, fullNode, nodeId } = outcome.value;
+        if (scanNodeForFlowReference(fullNode, targetFlowId, targetReferenceId)) {
+          matchingNodes.push({
+            nodeId,
+            nodeReferenceId: String(node.referenceId || ""),
+            nodeType: typeof fullNode.type === "string" ? fullNode.type : "",
+            nodeLabel: typeof fullNode.label === "string" ? fullNode.label : ""
+          });
+        }
+      }
+
+      return { flow, matchingNodes };
+    })
+  );
+
+  const callers = [];
+  const callerErrors = [];
+
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    const flow = otherFlows[i];
+    if (outcome.status === "fulfilled") {
+      if (outcome.value.matchingNodes.length > 0) {
+        callers.push({ flow, nodes: outcome.value.matchingNodes });
+      }
+    } else {
+      callerErrors.push({
+        flowId: flow.id,
+        flowName: flow.name,
+        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)
+      });
+    }
+  }
+
+  const nodeCount = callers.reduce((sum, c) => sum + c.nodes.length, 0);
+
+  return {
+    targetFlowId,
+    targetReferenceId,
+    projectId,
+    count: callers.length,
+    nodeCount,
+    callerErrors: callerErrors.length > 0 ? callerErrors : [],
+    callers
+  };
+}
+
 module.exports = {
   searchCognigy,
   searchAllFlowNodes,
   listCognigyProjects,
   listCognigyFlows,
   listFlowNodeTypes,
-  searchFlowNodes
+  searchFlowNodes,
+  findFlowCallers
 };

@@ -10,7 +10,7 @@
     <main class="container">
       <h1>Cognigy Search Tool</h1>
 
-      <form id="search-form">
+      <div class="shared-selectors">
         <label for="projectId">Project</label>
         <div class="project-row">
           <select id="projectId" name="projectId">
@@ -26,44 +26,65 @@
           </select>
           <button type="button" id="refresh-flows">Refresh</button>
         </div>
+      </div>
 
-        <label for="text-query">Search text <span class="optional">(optional)</span></label>
-        <input id="text-query" name="query" type="text" placeholder="e.g. On a scale of 1–5" autocomplete="off" />
+      <nav class="tab-nav" role="tablist">
+        <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="search">Search</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="callers">Find Callers</button>
+      </nav>
 
-        <label for="nodeType">Node type <span class="optional">(optional)</span></label>
-        <input id="nodeType" name="nodeType" type="text" placeholder="e.g. say, question, code" list="nodeTypeList" autocomplete="off" />
-        <datalist id="nodeTypeList"></datalist>
+      <section id="search-tab-panel" class="tab-panel" role="tabpanel">
+        <form id="search-form">
+          <label for="text-query">Search text <span class="optional">(optional)</span></label>
+          <input id="text-query" name="query" type="text" placeholder="e.g. On a scale of 1–5" autocomplete="off" />
 
-        <label for="text-limit">Max results</label>
-        <input id="text-limit" name="limit" type="number" min="1" max="100" value="20" />
+          <label for="nodeType">Node type <span class="optional">(optional)</span></label>
+          <input id="nodeType" name="nodeType" type="text" placeholder="e.g. say, question, code" list="nodeTypeList" autocomplete="off" />
+          <datalist id="nodeTypeList"></datalist>
 
-        <div class="form-footer">
-          <button type="submit" id="submit-btn" disabled>Search</button>
-          <span id="form-hint" class="form-hint">Select a project and enter a search query or node type.</span>
-        </div>
-      </form>
+          <label for="text-limit">Max results</label>
+          <input id="text-limit" name="limit" type="number" min="1" max="100" value="20" />
 
-      <p id="status" role="status"></p>
+          <div class="form-footer">
+            <button type="submit" id="submit-btn" disabled>Search</button>
+            <span id="form-hint" class="form-hint">Select a project and enter a search query or node type.</span>
+          </div>
+        </form>
 
-      <section id="filter-bar" class="filter-bar hidden">
-        <span class="filter-label">Filter results:</span>
-        <select id="filter-node-type">
-          <option value="">All node types</option>
-        </select>
-        <select id="filter-flow-name">
-          <option value="">All flows</option>
-        </select>
-        <span id="filter-count" class="filter-count"></span>
-        <button type="button" id="clear-filters">Clear</button>
+        <p id="status" role="status"></p>
+
+        <section id="filter-bar" class="filter-bar hidden">
+          <span class="filter-label">Filter results:</span>
+          <select id="filter-node-type">
+            <option value="">All node types</option>
+          </select>
+          <select id="filter-flow-name">
+            <option value="">All flows</option>
+          </select>
+          <span id="filter-count" class="filter-count"></span>
+          <button type="button" id="clear-filters">Clear</button>
+        </section>
+
+        <section id="results-panel" class="results-panel hidden">
+          <div class="view-toggle">
+            <button type="button" id="processed-view-btn" class="view-btn active">Processed view</button>
+            <button type="button" id="json-view-btn" class="view-btn">JSON view</button>
+          </div>
+          <div id="processed-results"></div>
+          <pre id="json-results" class="hidden"></pre>
+        </section>
       </section>
 
-      <section id="results-panel" class="results-panel hidden">
-        <div class="view-toggle">
-          <button type="button" id="processed-view-btn" class="view-btn active">Processed view</button>
-          <button type="button" id="json-view-btn" class="view-btn">JSON view</button>
+      <section id="callers-tab-panel" class="tab-panel hidden" role="tabpanel">
+        <p class="tab-description">Find which other flows in the project reference the selected flow. Select a project and a specific flow above, then click <strong>Find Callers</strong>.</p>
+        <div class="form-footer">
+          <button type="button" id="callers-btn" disabled>Find Callers</button>
+          <span id="callers-hint" class="form-hint">Select a project and flow to find callers.</span>
         </div>
-        <div id="processed-results"></div>
-        <pre id="json-results" class="hidden"></pre>
+        <p id="callers-status" role="status"></p>
+        <section id="callers-results" class="callers-results hidden">
+          <div id="callers-processed"></div>
+        </section>
       </section>
     </main>
     <script src="/helpers.js"></script>

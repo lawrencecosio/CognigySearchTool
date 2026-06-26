@@ -20,6 +20,10 @@ form {
   margin-bottom: 1rem;
 }
 
+#search-tab-panel form {
+  margin-bottom: 0;
+}
+
 .project-row {
   display: flex;
   gap: 0.5rem;
@@ -40,6 +44,11 @@ button {
 button {
   width: fit-content;
   cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 #status.error {
@@ -288,4 +297,94 @@ pre {
   padding: 1rem;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+/* ─── Shared selectors ──────────────────────────────────────────────────── */
+.shared-selectors {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+/* ─── Tab nav ───────────────────────────────────────────────────────────── */
+.tab-nav {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #d0d7de;
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  color: #57606a;
+  cursor: pointer;
+  border-radius: 0;
+  width: auto;
+}
+
+.tab-btn:hover {
+  color: #24292f;
+  background: #f6f8fa;
+}
+
+.tab-btn.active {
+  color: #0969da;
+  border-bottom-color: #0969da;
+  font-weight: 600;
+}
+
+/* ─── Caller cards ──────────────────────────────────────────────────────── */
+.tab-description {
+  color: #57606a;
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.callers-results {
+  margin-top: 1rem;
+}
+
+.caller-card {
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 0.9rem;
+  margin-bottom: 0.8rem;
+  background: #fff;
+}
+
+.caller-flow-title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.caller-node-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+  list-style: disc;
+}
+
+.caller-node-item {
+  font-size: 0.9rem;
+  margin-bottom: 0.3rem;
+  color: #24292f;
+}
+
+.caller-node-item a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+.caller-node-item a:hover {
+  text-decoration: underline;
+}
+
+.caller-node-ref {
+  color: #57606a;
+  font-size: 0.82rem;
+  font-family: monospace;
 }

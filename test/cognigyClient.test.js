@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { listCognigyFlows, listFlowNodeTypes, searchAllFlowNodes, searchFlowNodes } = require("../src/cognigyClient");
+const { listCognigyFlows, listFlowNodeTypes, searchAllFlowNodes, searchFlowNodes, findFlowCallers } = require("../src/cognigyClient");
 
 function makeJsonResponse(payload) {
   return {
@@ -368,6 +368,240 @@ test("searchAllFlowNodes: surfaces per-flow errors in response; partial results 
     assert.equal(result.flowErrors.length, 1);
     assert.equal(result.flowErrors[0].flowName, "Error Flow");
     assert.ok(typeof result.flowErrors[0].error === "string", "error must be a string");
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.COGNIGY_API_BASE_URL;
+    } else {
+      process.env.COGNIGY_API_BASE_URL = originalBaseUrl;
+    }
+    if (originalApiKey === undefined) {
+      delete process.env.COGNIGY_API_KEY;
+    } else {
+      process.env.COGNIGY_API_KEY = originalApiKey;
+    }
+  }
+});
+
+// ─── findFlowCallers tests ─────────────────────────────────────────────────
+
+function makeProjectsPayload() {
+  return { primaryLocaleReference: "en-US" };
+}
+
+function makeFlowsPayload(flows) {
+  return {
+    items: flows.map((f) => ({
+      _id: f.id,
+      name: f.name,
+      referenceId: f.referenceId || ""
+    }))
+  };
+}
+
+function makeChartPayload(nodes) {
+  return { nodes };
+}
+
+test("findFlowCallers returns flows whose nodes reference the target flow by scanning full node details", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const TARGET_FLOW_ID = "flow-target";
+  const PROJECT_ID = "proj-1";
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) {
+      return makeJsonResponse(makeProjectsPayload());
+    }
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([
+        { id: TARGET_FLOW_ID, name: "Target Flow", referenceId: "ref-target" },
+        { id: "flow-caller", name: "Caller Flow", referenceId: "ref-caller" },
+        { id: "flow-unrelated", name: "Unrelated Flow", referenceId: "ref-unrelated" }
+      ]));
+    }
+    if (url === "https://example.test/v2.0/flows/flow-caller/chart") {
+      return makeJsonResponse(makeChartPayload([{ _id: "node-1", type: "executeFlow", referenceId: "ref-node-1" }]));
+    }
+    if (url === "https://example.test/v2.0/flows/flow-unrelated/chart") {
+      return makeJsonResponse(makeChartPayload([{ _id: "node-2", type: "say", referenceId: "ref-node-2" }]));
+    }
+    // node-1 full details — contains a reference to the target flow's referenceId
+    if (url === "https://example.test/v2.0/flows/flow-caller/chart/nodes/node-1") {
+      return makeJsonResponse({ _id: "node-1", type: "executeFlow", label: "Call Target", data: { childFlowReferenceId: "ref-target" } });
+    }
+    // node-2 full details — no reference to target
+    if (url === "https://example.test/v2.0/flows/flow-unrelated/chart/nodes/node-2") {
+      return makeJsonResponse({ _id: "node-2", type: "say", label: "Hello", data: { text: "Hello world" } });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await findFlowCallers({ targetFlowId: TARGET_FLOW_ID, projectId: PROJECT_ID });
+    assert.equal(result.count, 1);
+    assert.equal(result.nodeCount, 1);
+    assert.equal(result.callers[0].flow.name, "Caller Flow");
+    assert.equal(result.callers[0].nodes[0].nodeId, "node-1");
+    assert.equal(result.callers[0].nodes[0].nodeType, "executeFlow");
+    assert.equal(result.callers[0].nodes[0].nodeLabel, "Call Target");
+    assert.deepEqual(result.callerErrors, []);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.COGNIGY_API_BASE_URL;
+    } else {
+      process.env.COGNIGY_API_BASE_URL = originalBaseUrl;
+    }
+    if (originalApiKey === undefined) {
+      delete process.env.COGNIGY_API_KEY;
+    } else {
+      process.env.COGNIGY_API_KEY = originalApiKey;
+    }
+  }
+});
+
+test("findFlowCallers excludes the target flow itself from scanning", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const TARGET_FLOW_ID = "flow-target";
+  const PROJECT_ID = "proj-1";
+  const scannedFlows = [];
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) {
+      return makeJsonResponse(makeProjectsPayload());
+    }
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([
+        { id: TARGET_FLOW_ID, name: "Target Flow", referenceId: "ref-target" },
+        { id: "flow-other", name: "Other Flow", referenceId: "ref-other" }
+      ]));
+    }
+    const chartMatch = url.match(/\/v2\.0\/flows\/([^/]+)\/chart$/);
+    if (chartMatch) {
+      scannedFlows.push(chartMatch[1]);
+      return makeJsonResponse(makeChartPayload([]));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await findFlowCallers({ targetFlowId: TARGET_FLOW_ID, projectId: PROJECT_ID });
+    assert.ok(!scannedFlows.includes(TARGET_FLOW_ID), "Should not scan the target flow itself");
+    assert.equal(result.count, 0);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.COGNIGY_API_BASE_URL;
+    } else {
+      process.env.COGNIGY_API_BASE_URL = originalBaseUrl;
+    }
+    if (originalApiKey === undefined) {
+      delete process.env.COGNIGY_API_KEY;
+    } else {
+      process.env.COGNIGY_API_KEY = originalApiKey;
+    }
+  }
+});
+
+test("findFlowCallers records callerErrors when chart fetch fails", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const TARGET_FLOW_ID = "flow-target";
+  const PROJECT_ID = "proj-1";
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) {
+      return makeJsonResponse(makeProjectsPayload());
+    }
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([
+        { id: TARGET_FLOW_ID, name: "Target Flow", referenceId: "ref-target" },
+        { id: "flow-broken", name: "Broken Flow", referenceId: "ref-broken" }
+      ]));
+    }
+    // Chart fetch fails for the broken flow
+    if (url.endsWith("/v2.0/flows/flow-broken/chart")) {
+      return { ok: false, status: 403, headers: { get: () => "application/json" }, async text() { return JSON.stringify({ error: "Forbidden" }); } };
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await findFlowCallers({ targetFlowId: TARGET_FLOW_ID, projectId: PROJECT_ID });
+    assert.equal(result.callerErrors.length, 1);
+    assert.equal(result.callerErrors[0].flowId, "flow-broken");
+    assert.equal(result.count, 0);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.COGNIGY_API_BASE_URL;
+    } else {
+      process.env.COGNIGY_API_BASE_URL = originalBaseUrl;
+    }
+    if (originalApiKey === undefined) {
+      delete process.env.COGNIGY_API_KEY;
+    } else {
+      process.env.COGNIGY_API_KEY = originalApiKey;
+    }
+  }
+});
+
+test("findFlowCallers returns empty callers when no flow references the target", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const TARGET_FLOW_ID = "flow-target";
+  const PROJECT_ID = "proj-1";
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) {
+      return makeJsonResponse(makeProjectsPayload());
+    }
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([
+        { id: TARGET_FLOW_ID, name: "Target Flow", referenceId: "ref-target" },
+        { id: "flow-a", name: "Flow A", referenceId: "ref-a" },
+        { id: "flow-b", name: "Flow B", referenceId: "ref-b" }
+      ]));
+    }
+    // All charts return empty node lists — no nodes to scan
+    if (url.endsWith("/chart")) {
+      return makeJsonResponse(makeChartPayload([]));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await findFlowCallers({ targetFlowId: TARGET_FLOW_ID, projectId: PROJECT_ID });
+    assert.equal(result.count, 0);
+    assert.equal(result.nodeCount, 0);
+    assert.deepEqual(result.callers, []);
+    assert.deepEqual(result.callerErrors, []);
   } finally {
     global.fetch = originalFetch;
     if (originalBaseUrl === undefined) {

@@ -25,6 +25,15 @@ const filterFlowNameEl     = document.getElementById("filter-flow-name");
 const filterCountEl        = document.getElementById("filter-count");
 const clearFiltersBtnEl    = document.getElementById("clear-filters");
 
+const tabBtns              = document.querySelectorAll(".tab-btn");
+const searchTabPanelEl     = document.getElementById("search-tab-panel");
+const callersTabPanelEl    = document.getElementById("callers-tab-panel");
+const callersBtnEl         = document.getElementById("callers-btn");
+const callersHintEl        = document.getElementById("callers-hint");
+const callersStatusEl      = document.getElementById("callers-status");
+const callersResultsEl     = document.getElementById("callers-results");
+const callersProcessedEl   = document.getElementById("callers-processed");
+
 // ─── State ─────────────────────────────────────────────────────────────────
 let uiBaseUrl = null;
 let currentAllItems = [];
@@ -259,6 +268,15 @@ function updateSubmitState() {
     : (!hasQuery && !hasType)
     ? "Enter a search query or node type to search."
     : "";
+
+  const hasFlow = Boolean(flowSelectEl.value);
+  const canFindCallers = hasProject && hasFlow;
+  callersBtnEl.disabled = !canFindCallers;
+  callersHintEl.textContent = !hasProject
+    ? "Select a project to find callers."
+    : !hasFlow
+    ? "Select a specific flow to find callers."
+    : "";
 }
 
 // ─── Flow type datalist ────────────────────────────────────────────────────
@@ -328,6 +346,7 @@ async function loadFlows() {
     };
     renderFlows(data.items || []);
     await loadNodeTypeDatalist(flowSelectEl.value);
+    updateSubmitState();
   } catch (err) {
     setStatus(err instanceof Error ? err.message : "Failed to load flows", true);
   }
@@ -355,17 +374,151 @@ async function fetchConfig() {
   }
 }
 
+// ─── Tab switching ─────────────────────────────────────────────────────────
+function switchTab(tabName) {
+  for (const btn of tabBtns) {
+    const isActive = btn.dataset.tab === tabName;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", String(isActive));
+  }
+  searchTabPanelEl.classList.toggle("hidden", tabName !== "search");
+  callersTabPanelEl.classList.toggle("hidden", tabName !== "callers");
+}
+
+// ─── Callers feature ───────────────────────────────────────────────────────
+function clearCallers() {
+  callersProcessedEl.innerHTML = "";
+  callersResultsEl.classList.add("hidden");
+  callersStatusEl.textContent = "";
+  callersStatusEl.className = "";
+}
+
+function setCallersStatus(message, isError = false) {
+  callersStatusEl.textContent = message;
+  callersStatusEl.className = isError ? "error" : "";
+}
+
+function renderCallers(data) {
+  callersProcessedEl.innerHTML = "";
+
+  if (!data.callers || data.callers.length === 0) {
+    const emptyEl = document.createElement("p");
+    emptyEl.className = "empty-results";
+    emptyEl.textContent = "No flows found that reference this flow.";
+    callersProcessedEl.appendChild(emptyEl);
+    callersResultsEl.classList.remove("hidden");
+    return;
+  }
+
+  for (const caller of data.callers) {
+    const cardEl = document.createElement("article");
+    cardEl.className = "caller-card";
+
+    const titleEl = document.createElement("h3");
+    titleEl.className = "caller-flow-title";
+    titleEl.textContent = caller.flow.name;
+    cardEl.appendChild(titleEl);
+
+    const nodeCountEl = document.createElement("p");
+    nodeCountEl.className = "node-meta";
+    nodeCountEl.textContent = `${caller.nodes.length} referencing node${caller.nodes.length !== 1 ? "s" : ""}`;
+    cardEl.appendChild(nodeCountEl);
+
+    const nodeListEl = document.createElement("ul");
+    nodeListEl.className = "caller-node-list";
+
+    for (const node of caller.nodes) {
+      const itemEl = document.createElement("li");
+      itemEl.className = "caller-node-item";
+
+      const projectId = currentSearchContext.projectId;
+      const localeId = currentSearchContext.localeId;
+      const deepLink = uiBaseUrl
+        ? buildCognigyDeepLink(uiBaseUrl, projectId, localeId, caller.flow.id, node.nodeReferenceId)
+        : null;
+
+      const labelText = node.nodeLabel || "(No label)";
+      const typeText = node.nodeType ? ` [${node.nodeType}]` : "";
+
+      if (deepLink) {
+        const linkEl = document.createElement("a");
+        linkEl.href = deepLink;
+        linkEl.target = "_blank";
+        linkEl.rel = "noopener noreferrer";
+        linkEl.textContent = `${labelText}${typeText}`;
+        itemEl.appendChild(linkEl);
+      } else {
+        itemEl.textContent = `${labelText}${typeText}`;
+        if (node.nodeId || node.nodeReferenceId) {
+          const refEl = document.createElement("span");
+          refEl.className = "caller-node-ref";
+          refEl.textContent = ` (${node.nodeId || node.nodeReferenceId})`;
+          itemEl.appendChild(refEl);
+        }
+      }
+
+      nodeListEl.appendChild(itemEl);
+    }
+
+    cardEl.appendChild(nodeListEl);
+    callersProcessedEl.appendChild(cardEl);
+  }
+
+  callersResultsEl.classList.remove("hidden");
+}
+
+async function findCallers() {
+  const projectId = projectSelectEl.value;
+  const targetFlowId = flowSelectEl.value;
+
+  if (!projectId || !targetFlowId) {
+    setCallersStatus("Select a project and a specific flow first.", true);
+    return;
+  }
+
+  clearCallers();
+  setCallersStatus("Scanning flows for callers…");
+
+  try {
+    const params = new URLSearchParams({ targetFlowId, projectId });
+    const response = await fetch(`/api/flow-callers?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok) throw new Error(data.error || "Find callers failed");
+
+    let statusMsg = `Found ${data.count} flow${data.count !== 1 ? "s" : ""} referencing this flow`;
+    statusMsg += ` (${data.nodeCount} node${data.nodeCount !== 1 ? "s" : ""} total).`;
+
+    const errs = Array.isArray(data.callerErrors) ? data.callerErrors : [];
+    if (errs.length > 0) {
+      statusMsg += ` ⚠ ${errs.length} flow(s) could not be scanned — check API permissions.`;
+    }
+
+    setCallersStatus(statusMsg, errs.length > 0 && data.count === 0);
+    renderCallers(data);
+  } catch (err) {
+    setCallersStatus(err instanceof Error ? err.message : "Find callers failed", true);
+  }
+}
+
 // ─── Event listeners ───────────────────────────────────────────────────────
 refreshProjectsBtnEl.addEventListener("click", loadProjects);
 refreshFlowsBtnEl.addEventListener("click", loadFlows);
 
-projectSelectEl.addEventListener("change", () => {
-  loadFlows();
+for (const btn of tabBtns) {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+}
+
+callersBtnEl.addEventListener("click", findCallers);
+
+projectSelectEl.addEventListener("change", async () => {
+  await loadFlows();
   updateSubmitState();
 });
 
 flowSelectEl.addEventListener("change", async () => {
   await loadNodeTypeDatalist(flowSelectEl.value);
+  clearCallers();
   updateSubmitState();
 });
 
