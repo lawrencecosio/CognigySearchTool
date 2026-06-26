@@ -6,8 +6,10 @@ const {
   listCognigyFlows,
   listCognigyProjects,
   listFlowNodeTypes,
+  searchAllFlowNodes,
   searchCognigy,
-  searchFlowNodes
+  searchFlowNodes,
+  findFlowCallers
 } = require("./src/cognigyClient");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -17,8 +19,10 @@ function createApp(deps = {}) {
     listCognigyFlows: deps.listCognigyFlows || listCognigyFlows,
     listCognigyProjects: deps.listCognigyProjects || listCognigyProjects,
     listFlowNodeTypes: deps.listFlowNodeTypes || listFlowNodeTypes,
+    searchAllFlowNodes: deps.searchAllFlowNodes || searchAllFlowNodes,
     searchCognigy: deps.searchCognigy || searchCognigy,
-    searchFlowNodes: deps.searchFlowNodes || searchFlowNodes
+    searchFlowNodes: deps.searchFlowNodes || searchFlowNodes,
+    findFlowCallers: deps.findFlowCallers || findFlowCallers
   };
   const app = express();
 
@@ -42,8 +46,8 @@ function createApp(deps = {}) {
       return res.status(400).json({ error: "Provide exactly one of query parameter 'q' or 'nodeType'." });
     }
 
-    if (hasNodeType && !flowId) {
-      return res.status(400).json({ error: "Query parameter 'flowId' is required for nodeType search." });
+    if (hasNodeType && !flowId && !projectId) {
+      return res.status(400).json({ error: "Query parameter 'projectId' or 'flowId' is required for nodeType search." });
     }
 
     if (Number.isNaN(limit) || limit < 1) {
@@ -53,6 +57,16 @@ function createApp(deps = {}) {
     try {
       if (flowId) {
         const result = await api.searchFlowNodes({ flowId, query, nodeType });
+        return res.json(result);
+      }
+
+      if (hasNodeType && projectId) {
+        const result = await api.searchAllFlowNodes({ projectId, nodeType, limit });
+        return res.json(result);
+      }
+
+      if (hasQuery && projectId) {
+        const result = await api.searchAllFlowNodes({ projectId, query, limit });
         return res.json(result);
       }
 
@@ -99,6 +113,31 @@ function createApp(deps = {}) {
       const message = error instanceof Error ? error.message : "Unknown flow listing error";
       return res.status(502).json({ error: `Cognigy flow list failed: ${message}` });
     }
+  });
+
+  app.get("/api/flow-callers", async (req, res) => {
+    const targetFlowId = String(req.query.targetFlowId || "").trim();
+    const projectId = String(req.query.projectId || "").trim();
+
+    if (!targetFlowId) {
+      return res.status(400).json({ error: "Query parameter 'targetFlowId' is required." });
+    }
+    if (!projectId) {
+      return res.status(400).json({ error: "Query parameter 'projectId' is required." });
+    }
+
+    try {
+      const result = await api.findFlowCallers({ targetFlowId, projectId });
+      return res.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown flow callers error";
+      return res.status(502).json({ error: `Cognigy flow callers failed: ${message}` });
+    }
+  });
+
+  app.get("/api/config", (_req, res) => {
+    const uiBaseUrl = process.env.COGNIGY_UI_BASE_URL || null;
+    return res.json({ uiBaseUrl });
   });
 
   return app;

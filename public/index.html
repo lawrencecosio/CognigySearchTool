@@ -9,72 +9,85 @@
   <body>
     <main class="container">
       <h1>Cognigy Search Tool</h1>
-      <div class="search-tabs" role="tablist" aria-label="Search mode">
-        <button type="button" id="text-tab-btn" class="tab-btn active" role="tab" aria-controls="text-tab-panel" aria-selected="true">
-          Search by text
-        </button>
-        <button type="button" id="node-type-tab-btn" class="tab-btn" role="tab" aria-controls="node-type-tab-panel" aria-selected="false">
-          Search by node type
-        </button>
+
+      <div class="shared-selectors">
+        <label for="projectId">Project</label>
+        <div class="project-row">
+          <select id="projectId" name="projectId">
+            <option value="">Select project</option>
+          </select>
+          <button type="button" id="refresh-projects">Refresh</button>
+        </div>
+
+        <label for="flowId">Flow</label>
+        <div class="project-row">
+          <select id="flowId" name="flowId">
+            <option value="">All flows</option>
+          </select>
+          <button type="button" id="refresh-flows">Refresh</button>
+        </div>
       </div>
 
-      <section id="text-tab-panel" class="tab-panel" role="tabpanel" aria-labelledby="text-tab-btn">
-        <form id="text-search-form">
-          <label for="text-query">Search query</label>
-          <input id="text-query" name="query" type="text" placeholder="Enter search text" required />
-          <label for="text-projectId">Project</label>
-          <div class="project-row">
-            <select id="text-projectId" name="projectId">
-              <option value="">Select project</option>
-            </select>
-            <button type="button" id="refresh-projects">Refresh projects</button>
-          </div>
-          <label for="text-flowId">Flow (optional)</label>
-          <div class="project-row">
-            <select id="text-flowId" name="flowId">
-              <option value="">All flows (project-wide search)</option>
-            </select>
-            <button type="button" id="refresh-text-flows">Refresh flows</button>
-          </div>
-          <label for="text-limit">Limit</label>
+      <nav class="tab-nav" role="tablist">
+        <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="search">Search</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="callers">Find Callers</button>
+      </nav>
+
+      <section id="search-tab-panel" class="tab-panel" role="tabpanel">
+        <form id="search-form">
+          <label for="text-query">Search text <span class="optional">(optional)</span></label>
+          <input id="text-query" name="query" type="text" placeholder="e.g. On a scale of 1–5" autocomplete="off" />
+
+          <label for="nodeType">Node type <span class="optional">(optional)</span></label>
+          <input id="nodeType" name="nodeType" type="text" placeholder="e.g. say, question, code" list="nodeTypeList" autocomplete="off" />
+          <datalist id="nodeTypeList"></datalist>
+
+          <label for="text-limit">Max results</label>
           <input id="text-limit" name="limit" type="number" min="1" max="100" value="20" />
-          <button type="submit">Search text</button>
+
+          <div class="form-footer">
+            <button type="submit" id="submit-btn" disabled>Search</button>
+            <span id="form-hint" class="form-hint">Select a project and enter a search query or node type.</span>
+          </div>
         </form>
+
+        <p id="status" role="status"></p>
+
+        <section id="filter-bar" class="filter-bar hidden">
+          <span class="filter-label">Filter results:</span>
+          <select id="filter-node-type">
+            <option value="">All node types</option>
+          </select>
+          <select id="filter-flow-name">
+            <option value="">All flows</option>
+          </select>
+          <span id="filter-count" class="filter-count"></span>
+          <button type="button" id="clear-filters">Clear</button>
+        </section>
+
+        <section id="results-panel" class="results-panel hidden">
+          <div class="view-toggle">
+            <button type="button" id="processed-view-btn" class="view-btn active">Processed view</button>
+            <button type="button" id="json-view-btn" class="view-btn">JSON view</button>
+          </div>
+          <div id="processed-results"></div>
+          <pre id="json-results" class="hidden"></pre>
+        </section>
       </section>
 
-      <section id="node-type-tab-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="node-type-tab-btn">
-        <form id="node-type-search-form">
-          <label for="node-projectId">Project</label>
-          <div class="project-row">
-            <select id="node-projectId" name="projectId">
-              <option value="">Select project</option>
-            </select>
-            <button type="button" id="refresh-node-projects">Refresh projects</button>
-          </div>
-          <label for="node-flowId">Flow</label>
-          <div class="project-row">
-            <select id="node-flowId" name="flowId">
-              <option value="">Select flow</option>
-            </select>
-            <button type="button" id="refresh-node-flows">Refresh flows</button>
-          </div>
-          <label for="nodeType">Node type</label>
-          <select id="nodeType" name="nodeType" disabled>
-            <option value="">Select node type</option>
-          </select>
-          <button type="submit">Search node type</button>
-        </form>
-      </section>
-      <p id="status" role="status"></p>
-      <section id="results-panel" class="results-panel hidden">
-        <div class="view-toggle">
-          <button type="button" id="processed-view-btn" class="view-btn active">Processed view</button>
-          <button type="button" id="json-view-btn" class="view-btn">JSON view</button>
+      <section id="callers-tab-panel" class="tab-panel hidden" role="tabpanel">
+        <p class="tab-description">Find which other flows in the project reference the selected flow. Select a project and a specific flow above, then click <strong>Find Callers</strong>.</p>
+        <div class="form-footer">
+          <button type="button" id="callers-btn" disabled>Find Callers</button>
+          <span id="callers-hint" class="form-hint">Select a project and flow to find callers.</span>
         </div>
-        <div id="processed-results"></div>
-        <pre id="json-results" class="hidden"></pre>
+        <p id="callers-status" role="status"></p>
+        <section id="callers-results" class="callers-results hidden">
+          <div id="callers-processed"></div>
+        </section>
       </section>
     </main>
+    <script src="/helpers.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
