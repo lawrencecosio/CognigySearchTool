@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { listCognigyFlows, listFlowNodeTypes, searchAllFlowNodes, searchFlowNodes, findFlowCallers } = require("../src/cognigyClient");
+const { listCognigyFlows, listFlowNodeTypes, searchAllFlowNodes, searchFlowNodes, findFlowCallers, searchProjectIntents } = require("../src/cognigyClient");
 
 function makeJsonResponse(payload) {
   return {
@@ -614,5 +614,195 @@ test("findFlowCallers returns empty callers when no flow references the target",
     } else {
       process.env.COGNIGY_API_KEY = originalApiKey;
     }
+  }
+});
+
+// ─── searchProjectIntents tests ────────────────────────────────────────────
+
+function makeIntentsPayload(intents) {
+  return {
+    _embedded: {
+      intents: intents.map((i) => ({
+        name: i.name,
+        referenceId: i.referenceId || "",
+        isDisabled: i.isDisabled || false,
+        _links: { self: { href: `https://example.test/v2.0/flows/${i.flowId}/intents/${i.id}` } }
+      }))
+    },
+    total: intents.length
+  };
+}
+
+function makeSentencesPayload(sentences) {
+  return {
+    _embedded: { sentences: sentences.map((text) => ({ text })) },
+    total: sentences.length
+  };
+}
+
+test("searchProjectIntents returns nameMatches when intent name contains query", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const PROJECT_ID = "proj-1";
+  const FLOW_ID = "flow-1";
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) return makeJsonResponse(makeProjectsPayload());
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([{ id: FLOW_ID, name: "Flow One", referenceId: "ref-f1" }]));
+    }
+    if (url.includes(`/v2.0/flows/${FLOW_ID}/intents`)) {
+      return makeJsonResponse(makeIntentsPayload([
+        { id: "intent-1", name: "Book a flight", referenceId: "ref-i1", flowId: FLOW_ID },
+        { id: "intent-2", name: "Cancel booking", referenceId: "ref-i2", flowId: FLOW_ID }
+      ]));
+    }
+    if (url.includes(`/v2.0/flows/${FLOW_ID}/intents/intent-1/sentences`)) return makeJsonResponse(makeSentencesPayload([]));
+    if (url.includes(`/v2.0/flows/${FLOW_ID}/intents/intent-2/sentences`)) return makeJsonResponse(makeSentencesPayload([]));
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await searchProjectIntents({ projectId: PROJECT_ID, query: "flight" });
+    assert.equal(result.nameMatches.length, 1);
+    assert.equal(result.nameMatches[0].intent.name, "Book a flight");
+    assert.equal(result.nameMatches[0].flow.name, "Flow One");
+    assert.equal(result.sentenceMatches.length, 0);
+    assert.deepEqual(result.errors, []);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) { delete process.env.COGNIGY_API_BASE_URL; } else { process.env.COGNIGY_API_BASE_URL = originalBaseUrl; }
+    if (originalApiKey === undefined) { delete process.env.COGNIGY_API_KEY; } else { process.env.COGNIGY_API_KEY = originalApiKey; }
+  }
+});
+
+test("searchProjectIntents returns sentenceMatches when a sentence contains query", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const PROJECT_ID = "proj-1";
+  const FLOW_ID = "flow-1";
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) return makeJsonResponse(makeProjectsPayload());
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([{ id: FLOW_ID, name: "Flow One", referenceId: "ref-f1" }]));
+    }
+    // Check sentences before the broader intents path to avoid substring collision
+    if (url.includes(`/v2.0/flows/${FLOW_ID}/intents/intent-1/sentences`)) {
+      return makeJsonResponse(makeSentencesPayload(["Hello there", "Hi, how are you?", "Good morning"]));
+    }
+    if (url.includes(`/v2.0/flows/${FLOW_ID}/intents`)) {
+      return makeJsonResponse(makeIntentsPayload([
+        { id: "intent-1", name: "Greetings", referenceId: "ref-i1", flowId: FLOW_ID }
+      ]));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await searchProjectIntents({ projectId: PROJECT_ID, query: "hello" });
+    assert.equal(result.sentenceMatches.length, 1);
+    assert.equal(result.sentenceMatches[0].intent.name, "Greetings");
+    assert.deepEqual(result.sentenceMatches[0].matchedSentences, ["Hello there"]);
+    assert.equal(result.nameMatches.length, 0);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) { delete process.env.COGNIGY_API_BASE_URL; } else { process.env.COGNIGY_API_BASE_URL = originalBaseUrl; }
+    if (originalApiKey === undefined) { delete process.env.COGNIGY_API_KEY; } else { process.env.COGNIGY_API_KEY = originalApiKey; }
+  }
+});
+
+test("searchProjectIntents excludes intents whose names do not match query", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const PROJECT_ID = "proj-1";
+  const FLOW_ID = "flow-1";
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) return makeJsonResponse(makeProjectsPayload());
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([{ id: FLOW_ID, name: "Flow One", referenceId: "ref-f1" }]));
+    }
+    if (url.includes(`/v2.0/flows/${FLOW_ID}/intents`)) {
+      return makeJsonResponse(makeIntentsPayload([
+        { id: "intent-1", name: "Cancel booking", referenceId: "ref-i1", flowId: FLOW_ID },
+        { id: "intent-2", name: "Refund request", referenceId: "ref-i2", flowId: FLOW_ID }
+      ]));
+    }
+    if (url.includes("/sentences")) return makeJsonResponse(makeSentencesPayload([]));
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await searchProjectIntents({ projectId: PROJECT_ID, query: "flight" });
+    assert.equal(result.nameMatches.length, 0);
+    assert.equal(result.sentenceMatches.length, 0);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) { delete process.env.COGNIGY_API_BASE_URL; } else { process.env.COGNIGY_API_BASE_URL = originalBaseUrl; }
+    if (originalApiKey === undefined) { delete process.env.COGNIGY_API_KEY; } else { process.env.COGNIGY_API_KEY = originalApiKey; }
+  }
+});
+
+test("searchProjectIntents records errors for flows whose intent fetch fails and still returns other results", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.COGNIGY_API_BASE_URL;
+  const originalApiKey = process.env.COGNIGY_API_KEY;
+
+  process.env.COGNIGY_API_BASE_URL = "https://example.test";
+  process.env.COGNIGY_API_KEY = "test-key";
+
+  const PROJECT_ID = "proj-1";
+
+  global.fetch = async (urlObj) => {
+    const url = String(urlObj);
+    if (url.includes(`/new/v2.0/projects/${PROJECT_ID}`)) return makeJsonResponse(makeProjectsPayload());
+    if (url.includes("/v2.0/flows") && url.includes(`projectId=${PROJECT_ID}`)) {
+      return makeJsonResponse(makeFlowsPayload([
+        { id: "flow-ok", name: "Good Flow", referenceId: "ref-ok" },
+        { id: "flow-bad", name: "Bad Flow", referenceId: "ref-bad" }
+      ]));
+    }
+    if (url.includes("/v2.0/flows/flow-ok/intents")) {
+      return makeJsonResponse(makeIntentsPayload([{ id: "intent-ok", name: "Book flight", referenceId: "r-ok", flowId: "flow-ok" }]));
+    }
+    if (url.includes("/v2.0/flows/flow-ok/intents/intent-ok/sentences")) {
+      return makeJsonResponse(makeSentencesPayload([]));
+    }
+    // Intents fetch fails for flow-bad
+    if (url.includes("/v2.0/flows/flow-bad/intents")) {
+      return { ok: false, status: 403, headers: { get: () => "application/json" }, async text() { return JSON.stringify({ error: "Forbidden" }); } };
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  try {
+    const result = await searchProjectIntents({ projectId: PROJECT_ID, query: "flight" });
+    assert.equal(result.errors.length, 1);
+    assert.equal(result.errors[0].flowId, "flow-bad");
+    assert.equal(result.nameMatches.length, 1);
+    assert.equal(result.nameMatches[0].intent.name, "Book flight");
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) { delete process.env.COGNIGY_API_BASE_URL; } else { process.env.COGNIGY_API_BASE_URL = originalBaseUrl; }
+    if (originalApiKey === undefined) { delete process.env.COGNIGY_API_KEY; } else { process.env.COGNIGY_API_KEY = originalApiKey; }
   }
 });

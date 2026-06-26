@@ -12,6 +12,47 @@ function normalizeNodeType(type) {
   return String(type).toLowerCase().replace(/[\s_-]/g, "");
 }
 
+// Extracts the last path segment of a URL href as an ID.
+// e.g. ".../flows/abc123/intents/def456" → "def456"
+function extractIdFromHref(href) {
+  if (!href || typeof href !== "string") return "";
+  return href.split("?")[0].split("/").pop() || "";
+}
+
+// Creates a concurrency-limited fetch wrapper. At most `maxConcurrent` calls
+// to fetchCognigyJson will be in-flight at any time across all usages of the
+// returned function within a single invocation.
+function makeConcurrentFetcher(apiKey, maxConcurrent = 8) {
+  let activeCount = 0;
+  const waitQueue = [];
+
+  function acquireSlot() {
+    if (activeCount < maxConcurrent) {
+      activeCount++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => waitQueue.push(resolve));
+  }
+
+  function releaseSlot() {
+    if (waitQueue.length > 0) {
+      // Pass our slot directly to the next waiter (activeCount stays the same).
+      waitQueue.shift()();
+    } else {
+      activeCount--;
+    }
+  }
+
+  return async function limitedFetch(url) {
+    await acquireSlot();
+    try {
+      return await fetchCognigyJson(url, apiKey);
+    } finally {
+      releaseSlot();
+    }
+  };
+}
+
 function getRequiredEnv(name) {
   const value = process.env[name];
   if (!value) {
@@ -531,37 +572,7 @@ async function findFlowCallers({ targetFlowId, projectId }) {
   const targetReferenceId = targetFlow ? targetFlow.referenceId : "";
   const otherFlows = flowsResult.items.filter((f) => f.id !== targetFlowId);
 
-  // Concurrency limiter — avoids hammering the Cognigy API with thousands of
-  // parallel requests when a project has many flows and nodes.
-  const MAX_CONCURRENT = 8;
-  let activeCount = 0;
-  const waitQueue = [];
-
-  function acquireSlot() {
-    if (activeCount < MAX_CONCURRENT) {
-      activeCount++;
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => waitQueue.push(resolve));
-  }
-
-  function releaseSlot() {
-    if (waitQueue.length > 0) {
-      // Pass our slot directly to the next waiter (activeCount stays the same).
-      waitQueue.shift()();
-    } else {
-      activeCount--;
-    }
-  }
-
-  async function limitedFetch(url) {
-    await acquireSlot();
-    try {
-      return await fetchCognigyJson(url, apiKey);
-    } finally {
-      releaseSlot();
-    }
-  }
+  const limitedFetch = makeConcurrentFetcher(apiKey, 8);
 
   // For each other flow: fetch the chart (all nodes with basic metadata), then
   // fetch each node's full config and scan it recursively for the target flow's
@@ -638,6 +649,100 @@ async function findFlowCallers({ targetFlowId, projectId }) {
   };
 }
 
+async function searchProjectIntents({ projectId, query }) {
+  if (!projectId) throw new Error("projectId is required.");
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) throw new Error("query is required.");
+
+  const baseUrl = normalizeBaseUrl(getRequiredEnv("COGNIGY_API_BASE_URL"));
+  const apiKey = getRequiredEnv("COGNIGY_API_KEY");
+  const queryLower = normalizedQuery.toLowerCase();
+
+  const flowsResult = await listCognigyFlows({ projectId });
+  const flows = flowsResult.items;
+
+  const limitedFetch = makeConcurrentFetcher(apiKey, 8);
+
+  const nameMatches = [];
+  const sentenceMatches = [];
+  const errors = [];
+
+  const settled = await Promise.allSettled(
+    flows.map(async (flow) => {
+      const intentsUrl = new URL(`${baseUrl}/v2.0/flows/${flow.id}/intents`);
+      intentsUrl.searchParams.set("limit", "100");
+      const intentsPayload = await limitedFetch(intentsUrl);
+      const intents = extractItems(intentsPayload);
+
+      const flowNameMatches = [];
+      const flowSentenceMatches = [];
+
+      await Promise.allSettled(
+        intents.map(async (intent) => {
+          const intentId = (typeof intent._id === "string" && intent._id) ||
+            extractIdFromHref(
+              intent._links && intent._links.self ? intent._links.self.href : ""
+            );
+          const intentName = typeof intent.name === "string" ? intent.name : "";
+          const intentInfo = {
+            id: intentId,
+            name: intentName,
+            referenceId: typeof intent.referenceId === "string" ? intent.referenceId : "",
+            isDisabled: Boolean(intent.isDisabled)
+          };
+
+          // Name match — simple case-insensitive substring check
+          if (intentName.toLowerCase().includes(queryLower)) {
+            flowNameMatches.push({ flow, intent: intentInfo });
+          }
+
+          // Sentence match — fetch all training phrases for this intent
+          if (!intentId) return;
+          const sentencesUrl = new URL(
+            `${baseUrl}/v2.0/flows/${flow.id}/intents/${intentId}/sentences`
+          );
+          sentencesUrl.searchParams.set("limit", "100");
+          const sentencesPayload = await limitedFetch(sentencesUrl);
+          const sentences = extractItems(sentencesPayload);
+
+          const matchedSentences = sentences
+            .map((s) => (typeof s.text === "string" ? s.text : ""))
+            .filter((text) => text && text.toLowerCase().includes(queryLower));
+
+          if (matchedSentences.length > 0) {
+            flowSentenceMatches.push({ flow, intent: intentInfo, matchedSentences });
+          }
+        })
+      );
+
+      return { flowNameMatches, flowSentenceMatches };
+    })
+  );
+
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    const flow = flows[i];
+    if (outcome.status === "fulfilled") {
+      nameMatches.push(...outcome.value.flowNameMatches);
+      sentenceMatches.push(...outcome.value.flowSentenceMatches);
+    } else {
+      errors.push({
+        flowId: flow.id,
+        flowName: flow.name,
+        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)
+      });
+    }
+  }
+
+  return {
+    query: normalizedQuery,
+    projectId,
+    nameMatches,
+    sentenceMatches,
+    errors: errors.length > 0 ? errors : []
+  };
+}
+
 module.exports = {
   searchCognigy,
   searchAllFlowNodes,
@@ -645,5 +750,6 @@ module.exports = {
   listCognigyFlows,
   listFlowNodeTypes,
   searchFlowNodes,
-  findFlowCallers
+  findFlowCallers,
+  searchProjectIntents
 };

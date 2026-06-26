@@ -28,11 +28,19 @@ const clearFiltersBtnEl    = document.getElementById("clear-filters");
 const tabBtns              = document.querySelectorAll(".tab-btn");
 const searchTabPanelEl     = document.getElementById("search-tab-panel");
 const callersTabPanelEl    = document.getElementById("callers-tab-panel");
+const intentsTabPanelEl    = document.getElementById("intents-tab-panel");
 const callersBtnEl         = document.getElementById("callers-btn");
 const callersHintEl        = document.getElementById("callers-hint");
 const callersStatusEl      = document.getElementById("callers-status");
 const callersResultsEl     = document.getElementById("callers-results");
 const callersProcessedEl   = document.getElementById("callers-processed");
+
+const intentsBtnEl         = document.getElementById("intents-btn");
+const intentsQueryEl       = document.getElementById("intents-query");
+const intentsStatusEl      = document.getElementById("intents-status");
+const intentsResultsEl     = document.getElementById("intents-results");
+const intentsNameSectionEl = document.getElementById("intents-name-section");
+const intentsSentenceSectionEl = document.getElementById("intents-sentence-section");
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let uiBaseUrl = null;
@@ -277,6 +285,8 @@ function updateSubmitState() {
     : !hasFlow
     ? "Select a specific flow to find callers."
     : "";
+
+  intentsBtnEl.disabled = !hasProject;
 }
 
 // ─── Flow type datalist ────────────────────────────────────────────────────
@@ -383,6 +393,7 @@ function switchTab(tabName) {
   }
   searchTabPanelEl.classList.toggle("hidden", tabName !== "search");
   callersTabPanelEl.classList.toggle("hidden", tabName !== "callers");
+  intentsTabPanelEl.classList.toggle("hidden", tabName !== "intents");
 }
 
 // ─── Callers feature ───────────────────────────────────────────────────────
@@ -501,6 +512,161 @@ async function findCallers() {
   }
 }
 
+// ─── Intent search feature ─────────────────────────────────────────────────
+function clearIntentResults() {
+  intentsNameSectionEl.innerHTML = "";
+  intentsSentenceSectionEl.innerHTML = "";
+  intentsResultsEl.classList.add("hidden");
+  intentsStatusEl.textContent = "";
+  intentsStatusEl.className = "";
+}
+
+function setIntentStatus(message, isError = false) {
+  intentsStatusEl.textContent = message;
+  intentsStatusEl.className = isError ? "error" : "";
+}
+
+function highlightQuery(text, query) {
+  if (!query) return document.createTextNode(text);
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return document.createTextNode(text);
+  const span = document.createElement("span");
+  span.appendChild(document.createTextNode(text.slice(0, idx)));
+  const mark = document.createElement("mark");
+  mark.textContent = text.slice(idx, idx + query.length);
+  span.appendChild(mark);
+  span.appendChild(document.createTextNode(text.slice(idx + query.length)));
+  return span;
+}
+
+function renderIntentResults(data) {
+  intentsNameSectionEl.innerHTML = "";
+  intentsSentenceSectionEl.innerHTML = "";
+  const query = data.query || "";
+
+  // ── Name matches ──
+  const nameHeading = document.createElement("h3");
+  nameHeading.className = "intents-section-heading";
+  nameHeading.textContent = `Intent names matching "${query}" (${data.nameMatches.length})`;
+  intentsNameSectionEl.appendChild(nameHeading);
+
+  if (data.nameMatches.length === 0) {
+    const emptyEl = document.createElement("p");
+    emptyEl.className = "empty-results";
+    emptyEl.textContent = "No intent names match this query.";
+    intentsNameSectionEl.appendChild(emptyEl);
+  } else {
+    for (const { flow, intent } of data.nameMatches) {
+      const cardEl = document.createElement("article");
+      cardEl.className = "intent-match-card";
+
+      const nameEl = document.createElement("h4");
+      nameEl.className = "intent-match-name";
+      nameEl.appendChild(highlightQuery(intent.name, query));
+      if (intent.isDisabled) {
+        const badge = document.createElement("span");
+        badge.className = "intent-disabled-badge";
+        badge.textContent = "disabled";
+        nameEl.appendChild(badge);
+      }
+      cardEl.appendChild(nameEl);
+
+      const metaEl = document.createElement("p");
+      metaEl.className = "intent-match-meta";
+      metaEl.textContent = `Flow: ${flow.name}`;
+      cardEl.appendChild(metaEl);
+
+      intentsNameSectionEl.appendChild(cardEl);
+    }
+  }
+
+  // ── Sentence matches ──
+  const sentenceHeading = document.createElement("h3");
+  sentenceHeading.className = "intents-section-heading";
+  sentenceHeading.textContent = `Example sentences matching "${query}" (${data.sentenceMatches.length} intent${data.sentenceMatches.length !== 1 ? "s" : ""})`;
+  intentsSentenceSectionEl.appendChild(sentenceHeading);
+
+  if (data.sentenceMatches.length === 0) {
+    const emptyEl = document.createElement("p");
+    emptyEl.className = "empty-results";
+    emptyEl.textContent = "No example sentences match this query.";
+    intentsSentenceSectionEl.appendChild(emptyEl);
+  } else {
+    for (const { flow, intent, matchedSentences } of data.sentenceMatches) {
+      const cardEl = document.createElement("article");
+      cardEl.className = "intent-match-card";
+
+      const nameEl = document.createElement("h4");
+      nameEl.className = "intent-match-name";
+      nameEl.textContent = intent.name;
+      if (intent.isDisabled) {
+        const badge = document.createElement("span");
+        badge.className = "intent-disabled-badge";
+        badge.textContent = "disabled";
+        nameEl.appendChild(badge);
+      }
+      cardEl.appendChild(nameEl);
+
+      const metaEl = document.createElement("p");
+      metaEl.className = "intent-match-meta";
+      metaEl.textContent = `Flow: ${flow.name} · ${matchedSentences.length} matching sentence${matchedSentences.length !== 1 ? "s" : ""}`;
+      cardEl.appendChild(metaEl);
+
+      const listEl = document.createElement("ul");
+      listEl.className = "intent-sentence-list";
+      for (const sentence of matchedSentences) {
+        const itemEl = document.createElement("li");
+        itemEl.className = "intent-sentence-item";
+        itemEl.appendChild(highlightQuery(sentence, query));
+        listEl.appendChild(itemEl);
+      }
+      cardEl.appendChild(listEl);
+
+      intentsSentenceSectionEl.appendChild(cardEl);
+    }
+  }
+
+  intentsResultsEl.classList.remove("hidden");
+}
+
+async function searchIntents() {
+  const projectId = projectSelectEl.value;
+  const query = intentsQueryEl.value.trim();
+
+  if (!projectId) {
+    setIntentStatus("Select a project first.", true);
+    return;
+  }
+  if (!query) {
+    setIntentStatus("Enter a search query.", true);
+    return;
+  }
+
+  clearIntentResults();
+  setIntentStatus("Searching intents…");
+
+  try {
+    const params = new URLSearchParams({ q: query, projectId });
+    const response = await fetch(`/api/intent-search?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok) throw new Error(data.error || "Intent search failed");
+
+    const totalMatches = data.nameMatches.length + data.sentenceMatches.length;
+    let statusMsg = `Found ${data.nameMatches.length} intent name match${data.nameMatches.length !== 1 ? "es" : ""} and ${data.sentenceMatches.length} intent${data.sentenceMatches.length !== 1 ? "s" : ""} with matching sentences.`;
+
+    const errs = Array.isArray(data.errors) ? data.errors : [];
+    if (errs.length > 0) {
+      statusMsg += ` ⚠ ${errs.length} flow(s) could not be scanned.`;
+    }
+
+    setIntentStatus(statusMsg, errs.length > 0 && totalMatches === 0);
+    renderIntentResults(data);
+  } catch (err) {
+    setIntentStatus(err instanceof Error ? err.message : "Intent search failed", true);
+  }
+}
+
 // ─── Event listeners ───────────────────────────────────────────────────────
 refreshProjectsBtnEl.addEventListener("click", loadProjects);
 refreshFlowsBtnEl.addEventListener("click", loadFlows);
@@ -510,6 +676,8 @@ for (const btn of tabBtns) {
 }
 
 callersBtnEl.addEventListener("click", findCallers);
+intentsBtnEl.addEventListener("click", searchIntents);
+intentsQueryEl.addEventListener("keydown", (e) => { if (e.key === "Enter") searchIntents(); });
 
 projectSelectEl.addEventListener("change", async () => {
   await loadFlows();

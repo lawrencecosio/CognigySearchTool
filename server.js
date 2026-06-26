@@ -9,7 +9,8 @@ const {
   searchAllFlowNodes,
   searchCognigy,
   searchFlowNodes,
-  findFlowCallers
+  findFlowCallers,
+  searchProjectIntents
 } = require("./src/cognigyClient");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -22,7 +23,8 @@ function createApp(deps = {}) {
     searchAllFlowNodes: deps.searchAllFlowNodes || searchAllFlowNodes,
     searchCognigy: deps.searchCognigy || searchCognigy,
     searchFlowNodes: deps.searchFlowNodes || searchFlowNodes,
-    findFlowCallers: deps.findFlowCallers || findFlowCallers
+    findFlowCallers: deps.findFlowCallers || findFlowCallers,
+    searchProjectIntents: deps.searchProjectIntents || searchProjectIntents
   };
   const app = express();
 
@@ -132,6 +134,26 @@ function createApp(deps = {}) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown flow callers error";
       return res.status(502).json({ error: `Cognigy flow callers failed: ${message}` });
+    }
+  });
+
+  app.get("/api/intent-search", async (req, res) => {
+    const query = String(req.query.q || "").trim();
+    const projectId = String(req.query.projectId || "").trim();
+
+    if (!query) {
+      return res.status(400).json({ error: "Query parameter 'q' is required." });
+    }
+    if (!projectId) {
+      return res.status(400).json({ error: "Query parameter 'projectId' is required." });
+    }
+
+    try {
+      const result = await api.searchProjectIntents({ projectId, query });
+      return res.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown intent search error";
+      return res.status(502).json({ error: `Cognigy intent search failed: ${message}` });
     }
   });
 
