@@ -31,6 +31,7 @@
       <nav class="tab-nav" role="tablist">
         <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="search">Search</button>
         <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="callers">Find Callers</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="intents">Search Intents</button>
       </nav>
 
       <section id="search-tab-panel" class="tab-panel" role="tabpanel">
@@ -84,6 +85,19 @@
         <p id="callers-status" role="status"></p>
         <section id="callers-results" class="callers-results hidden">
           <div id="callers-processed"></div>
+        </section>
+      </section>
+
+      <section id="intents-tab-panel" class="tab-panel hidden" role="tabpanel">
+        <p class="tab-description">Search intent names and example sentences across all flows in the selected project. Select a project above, enter a query, then click <strong>Search Intents</strong>.</p>
+        <div class="form-footer">
+          <input id="intents-query" type="text" placeholder="e.g. book a flight" autocomplete="off" />
+          <button type="button" id="intents-btn" disabled>Search Intents</button>
+        </div>
+        <p id="intents-status" role="status"></p>
+        <section id="intents-results" class="hidden">
+          <div id="intents-name-section"></div>
+          <div id="intents-sentence-section"></div>
         </section>
       </section>
     </main>

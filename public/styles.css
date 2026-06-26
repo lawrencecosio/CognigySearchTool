@@ -388,3 +388,76 @@ pre {
   font-size: 0.82rem;
   font-family: monospace;
 }
+
+/* ─── Intent search ─────────────────────────────────────────────────────── */
+.intents-section-heading {
+  margin: 1.2rem 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #24292f;
+  border-bottom: 1px solid #d0d7de;
+  padding-bottom: 0.35rem;
+}
+
+.intent-match-card {
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.6rem;
+  background: #fff;
+}
+
+.intent-match-name {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.intent-disabled-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  color: #57606a;
+  border-radius: 4px;
+  padding: 0 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.intent-match-meta {
+  margin: 0 0 0.3rem;
+  font-size: 0.82rem;
+  color: #57606a;
+}
+
+.intent-sentence-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+  list-style: disc;
+}
+
+.intent-sentence-item {
+  font-size: 0.88rem;
+  color: #24292f;
+  margin-bottom: 0.25rem;
+}
+
+.intent-sentence-item mark,
+.intent-match-name mark {
+  background: #fff8c5;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+#intents-query {
+  width: 100%;
+  max-width: 400px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
